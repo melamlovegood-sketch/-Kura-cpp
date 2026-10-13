@@ -5,6 +5,18 @@
 #include <QSqlQuery>
 #include <QVariant>
 
+namespace {
+QString writeError(const QSqlError &error)
+{
+    const int code = error.nativeErrorCode().toInt() & 0xff;
+    if (code == 5 || code == 6)
+        return QStringLiteral("数据库正在被占用，请稍后重试。");
+    if (code == 8)
+        return QStringLiteral("数据库只读，请检查文件和目录权限。");
+    return QStringLiteral("数据库操作失败：%1。请检查文件权限或稍后重试。").arg(error.text());
+}
+}
+
 TransactionRepository::TransactionRepository(DatabaseManager &database)
     : m_database(database)
 {
@@ -36,19 +48,79 @@ bool TransactionRepository::add(Transaction &transaction)
     query.bindValue(QStringLiteral(":category"), transaction.category());
     query.bindValue(QStringLiteral(":date"), transaction.date().toString(Qt::ISODate));
     if (!query.exec()) {
-        const int code = query.lastError().nativeErrorCode().toInt() & 0xff;
-        if (code == 5 || code == 6)
-            m_lastError = QStringLiteral("数据库正在被占用，请稍后重试。");
-        else if (code == 8)
-            m_lastError = QStringLiteral("数据库只读，请检查文件和目录权限。");
-        else
-            m_lastError = QStringLiteral("无法写入消费记录：%1。请检查文件权限或稍后重试。")
-                .arg(query.lastError().text());
+        m_lastError = writeError(query.lastError());
         return false;
     }
     transaction = Transaction(query.lastInsertId().toLongLong(), transaction.description(),
                               transaction.amountCents(), transaction.category(), transaction.date());
     m_lastError.clear();
+    return true;
+}
+
+bool TransactionRepository::update(const Transaction &transaction)
+{
+    m_lastError = transaction.validationError();
+    if (!m_lastError.isEmpty())
+        return false;
+    if (transaction.id() <= 0) {
+        m_lastError = QStringLiteral("请选择已经保存的消费记录。");
+        return false;
+    }
+    auto connection = m_database.database();
+    if (!connection.isOpen()) {
+        m_lastError = QStringLiteral("数据库未打开，无法修改记录。");
+        return false;
+    }
+    QSqlQuery query(connection);
+    if (!query.prepare(QStringLiteral(
+            "UPDATE transactions SET description=:description, amount_cents=:amount, "
+            "category=:category, date=:date WHERE id=:id"))) {
+        m_lastError = writeError(query.lastError());
+        return false;
+    }
+    query.bindValue(QStringLiteral(":id"), transaction.id());
+    query.bindValue(QStringLiteral(":description"), transaction.description());
+    query.bindValue(QStringLiteral(":amount"), transaction.amountCents());
+    query.bindValue(QStringLiteral(":category"), transaction.category());
+    query.bindValue(QStringLiteral(":date"), transaction.date().toString(Qt::ISODate));
+    if (!query.exec()) {
+        m_lastError = writeError(query.lastError());
+        return false;
+    }
+    if (query.numRowsAffected() != 1) {
+        m_lastError = QStringLiteral("这条记录已不存在，请刷新列表后重试。");
+        return false;
+    }
+    m_lastError.clear();
+    return true;
+}
+
+bool TransactionRepository::remove(qint64 id)
+{
+    m_lastError.clear();
+    if (id <= 0) {
+        m_lastError = QStringLiteral("请选择有效的消费记录。");
+        return false;
+    }
+    auto connection = m_database.database();
+    if (!connection.isOpen()) {
+        m_lastError = QStringLiteral("数据库未打开，无法删除记录。");
+        return false;
+    }
+    QSqlQuery query(connection);
+    if (!query.prepare(QStringLiteral("DELETE FROM transactions WHERE id=:id"))) {
+        m_lastError = writeError(query.lastError());
+        return false;
+    }
+    query.bindValue(QStringLiteral(":id"), id);
+    if (!query.exec()) {
+        m_lastError = writeError(query.lastError());
+        return false;
+    }
+    if (query.numRowsAffected() != 1) {
+        m_lastError = QStringLiteral("这条记录已不存在，请刷新列表后重试。");
+        return false;
+    }
     return true;
 }
 

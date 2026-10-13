@@ -34,3 +34,11 @@ QStringList Transaction::categories()
     return {QStringLiteral("餐饮"), QStringLiteral("交通"), QStringLiteral("购物"),
             QStringLiteral("娱乐"), QStringLiteral("学习"), QStringLiteral("其他")};
 }
+
+QString Transaction::formatAmount(qint64 cents)
+{
+    return QStringLiteral("%1¥%2.%3")
+        .arg(cents < 0 ? QStringLiteral("-") : QString())
+        .arg(qAbs(cents / 100))
+        .arg(qAbs(cents % 100), 2, 10, QLatin1Char('0'));
+}

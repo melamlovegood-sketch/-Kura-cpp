@@ -76,6 +76,17 @@ AddTransactionDialog::AddTransactionDialog(QWidget *parent)
     m_descriptionEdit->setFocus();
 }
 
+AddTransactionDialog::AddTransactionDialog(const Transaction &transaction, QWidget *parent)
+    : AddTransactionDialog(parent)
+{
+    m_transactionId = transaction.id();
+    setWindowTitle(QStringLiteral("修改消费"));
+    m_descriptionEdit->setText(transaction.description());
+    m_amountSpinBox->setValue(transaction.amount());
+    m_categoryComboBox->setCurrentText(transaction.category());
+    m_dateEdit->setDate(transaction.date());
+}
+
 QString AddTransactionDialog::description() const
 {
     return m_descriptionEdit->text().trimmed();
@@ -140,7 +151,7 @@ void AddTransactionDialog::accept()
 
 Transaction AddTransactionDialog::transaction() const
 {
-    return Transaction(0, description(), qRound64(amount() * 100.0), category(), date());
+    return Transaction(m_transactionId, description(), qRound64(amount() * 100.0), category(), date());
 }
 
 void AddTransactionDialog::showSaveError(const QString &message)

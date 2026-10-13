@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(KuraCpp VERSION 0.2.0 LANGUAGES CXX)
+project(KuraCpp VERSION 0.3.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -15,6 +15,8 @@ add_library(kura_core STATIC
     src/Transaction.cpp src/Transaction.h
     src/DatabaseManager.cpp src/DatabaseManager.h
     src/TransactionRepository.cpp src/TransactionRepository.h
+    src/TransactionFilter.cpp src/TransactionFilter.h
+    src/ExpenseSummary.cpp src/ExpenseSummary.h
 )
 target_include_directories(kura_core PUBLIC src)
 target_link_libraries(kura_core PUBLIC Qt6::Sql)
@@ -37,4 +39,8 @@ if(BUILD_TESTING)
     target_link_libraries(window_tests PRIVATE kura_widgets Qt6::Test)
     add_test(NAME window_tests COMMAND window_tests)
     set_tests_properties(window_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+    add_executable(summary_tests tests/summary_tests.cpp)
+    target_link_libraries(summary_tests PRIVATE kura_core Qt6::Test)
+    add_test(NAME summary_tests COMMAND summary_tests)
 endif()

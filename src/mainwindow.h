@@ -3,10 +3,14 @@
 #include <QMainWindow>
 #include "DatabaseManager.h"
 #include "TransactionRepository.h"
+#include "TransactionFilter.h"
 
 class QPushButton;
 class QTableWidget;
 class QLabel;
+class QComboBox;
+class QCheckBox;
+class QDateEdit;
 
 class MainWindow : public QMainWindow
 {
@@ -21,11 +25,34 @@ public:
 
 private:
     void showError(const QString &message);
+    void openTransactionDialog(const Transaction *transaction = nullptr);
+    void editSelectedTransaction();
+    void deleteSelectedTransaction();
+    void applyFilters();
+    void resetFilters();
+    void updateActionState();
+    qint64 selectedTransactionId() const;
+    const Transaction *selectedTransaction() const;
     DatabaseManager m_database;
     TransactionRepository m_repository;
     QList<Transaction> m_transactions;
+    TransactionFilter m_filter;
+    bool m_databaseReady = false;
     QPushButton *m_addButton = nullptr;
+    QPushButton *m_editButton = nullptr;
+    QPushButton *m_deleteButton = nullptr;
+    QPushButton *m_applyFilterButton = nullptr;
+    QPushButton *m_resetFilterButton = nullptr;
+    QComboBox *m_categoryFilter = nullptr;
+    QCheckBox *m_useDateRange = nullptr;
+    QDateEdit *m_startDate = nullptr;
+    QDateEdit *m_endDate = nullptr;
     QTableWidget *m_transactionTable = nullptr;
     QLabel *m_emptyHint = nullptr;
     QLabel *m_errorLabel = nullptr;
+    QLabel *m_totalLabel = nullptr;
+    QLabel *m_monthLabel = nullptr;
+    QLabel *m_todayLabel = nullptr;
+    QLabel *m_filteredSummaryLabel = nullptr;
+    QLabel *m_filterDescriptionLabel = nullptr;
 };

@@ -22,6 +22,9 @@ private slots:
     void failedReadKeepsExistingList();
     void independentConnections();
     void survivesNewProcess();
+    void updateAndDeletePersist();
+    void missingAndInvalidMutations();
+    void lockedAndReadOnlyMutationsKeepData();
 };
 
 void RepositoryTests::saveAndReopen()
@@ -202,7 +205,8 @@ void RepositoryTests::survivesNewProcess()
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
     const QString path = directory.filePath(QStringLiteral("process.sqlite"));
-    for (const auto &mode : {QStringLiteral("--probe-write"), QStringLiteral("--probe-read")}) {
+    for (const auto &mode : {QStringLiteral("--probe-write"), QStringLiteral("--probe-read"),
+                            QStringLiteral("--probe-mutate"), QStringLiteral("--probe-read-mutated")}) {
         QProcess process;
         process.start(QCoreApplication::applicationFilePath(), {mode, path});
         QVERIFY(process.waitForStarted(5000));
@@ -210,6 +214,108 @@ void RepositoryTests::survivesNewProcess()
         QCOMPARE(process.exitStatus(), QProcess::NormalExit);
         QVERIFY2(process.exitCode() == 0, process.readAllStandardError().constData());
     }
+}
+
+void RepositoryTests::updateAndDeletePersist()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString path = directory.filePath(QStringLiteral("crud.sqlite"));
+    qint64 keptId = 0, deletedId = 0;
+    {
+        DatabaseManager database(path);
+        QVERIFY(database.initialize());
+        TransactionRepository repository(database);
+        Transaction a(0, QStringLiteral("午饭"), 2800, QStringLiteral("餐饮"), QDate(2026, 10, 13));
+        Transaction b(0, QStringLiteral("地铁"), 400, QStringLiteral("交通"), QDate(2026, 10, 12));
+        QVERIFY(repository.add(a));
+        QVERIFY(repository.add(b));
+        keptId = a.id();
+        deletedId = b.id();
+        Transaction edited(a.id(), QStringLiteral("  教材 ' SQL  "), 1234,
+                           QStringLiteral("学习"), QDate(2026, 10, 1));
+        QVERIFY(repository.update(edited));
+        QVERIFY(repository.update(edited)); // Unchanged values are still a successful edit.
+        QVERIFY(repository.remove(b.id()));
+    }
+    DatabaseManager database(path);
+    QVERIFY(database.initialize());
+    TransactionRepository repository(database);
+    QList<Transaction> rows;
+    QVERIFY(repository.findAll(rows));
+    QCOMPARE(rows.size(), 1);
+    QCOMPARE(rows.first().id(), keptId);
+    QCOMPARE(rows.first().description(), QStringLiteral("教材 ' SQL"));
+    QCOMPARE(rows.first().amountCents(), 1234);
+    QCOMPARE(rows.first().category(), QStringLiteral("学习"));
+    QCOMPARE(rows.first().date(), QDate(2026, 10, 1));
+    Transaction next(0, QStringLiteral("下一条"), 100, QStringLiteral("其他"), QDate::currentDate());
+    QVERIFY(repository.add(next));
+    QVERIFY(next.id() > deletedId);
+}
+
+void RepositoryTests::missingAndInvalidMutations()
+{
+    DatabaseManager database(QStringLiteral(":memory:"));
+    QVERIFY(database.initialize());
+    TransactionRepository repository(database);
+    Transaction saved(0, QStringLiteral("午饭"), 2800, QStringLiteral("餐饮"), QDate::currentDate());
+    QVERIFY(repository.add(saved));
+    QVERIFY(!repository.update(Transaction(saved.id(), QString(), 2800,
+                                           QStringLiteral("餐饮"), QDate::currentDate())));
+    QVERIFY(!repository.update(Transaction(saved.id(), QStringLiteral("午饭"), 0,
+                                           QStringLiteral("餐饮"), QDate::currentDate())));
+    QVERIFY(!repository.update(Transaction(0, QStringLiteral("午饭"), 2800,
+                                           QStringLiteral("餐饮"), QDate::currentDate())));
+    QVERIFY(!repository.update(Transaction(999, QStringLiteral("午饭"), 2800,
+                                           QStringLiteral("餐饮"), QDate::currentDate())));
+    QVERIFY(!repository.remove(0));
+    QVERIFY(!repository.remove(-1));
+    QVERIFY(!repository.remove(999));
+    QList<Transaction> rows;
+    QVERIFY(repository.findAll(rows));
+    QCOMPARE(rows.size(), 1);
+    QCOMPARE(rows.first().amountCents(), 2800);
+    QVERIFY(repository.remove(saved.id()));
+    QVERIFY(!repository.remove(saved.id()));
+    QVERIFY(!repository.lastError().isEmpty());
+}
+
+void RepositoryTests::lockedAndReadOnlyMutationsKeepData()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString path = directory.filePath(QStringLiteral("locked-mutations.sqlite"));
+    DatabaseManager database(path), other(path);
+    QVERIFY(database.initialize());
+    QVERIFY(other.initialize());
+    TransactionRepository repository(database);
+    Transaction saved(0, QStringLiteral("午饭"), 2800, QStringLiteral("餐饮"), QDate::currentDate());
+    QVERIFY(repository.add(saved));
+    const Transaction edited(saved.id(), QStringLiteral("教材"), 1234, QStringLiteral("学习"), QDate::currentDate());
+    auto connection = database.database();
+    connection.close();
+    connection.setConnectOptions(QStringLiteral("QSQLITE_BUSY_TIMEOUT=20"));
+    QVERIFY(connection.open());
+    QSqlQuery lock(other.database());
+    QVERIFY(lock.exec(QStringLiteral("BEGIN IMMEDIATE")));
+    QVERIFY(!repository.update(edited));
+    QVERIFY(repository.lastError().contains(QStringLiteral("占用")));
+    QVERIFY(!repository.remove(saved.id()));
+    QVERIFY(repository.lastError().contains(QStringLiteral("占用")));
+    QVERIFY(lock.exec(QStringLiteral("ROLLBACK")));
+    connection.close();
+    connection.setConnectOptions(QStringLiteral("QSQLITE_OPEN_READONLY"));
+    QVERIFY(connection.open());
+    QVERIFY(!repository.update(edited));
+    QVERIFY(repository.lastError().contains(QStringLiteral("只读")));
+    QVERIFY(!repository.remove(saved.id()));
+    QVERIFY(repository.lastError().contains(QStringLiteral("只读")));
+    QList<Transaction> rows;
+    QVERIFY(repository.findAll(rows));
+    QCOMPARE(rows.size(), 1);
+    QCOMPARE(rows.first().description(), QStringLiteral("午饭"));
+    QCOMPARE(rows.first().amountCents(), 2800);
 }
 
 int main(int argc, char **argv)
@@ -230,6 +336,18 @@ int main(int argc, char **argv)
             return repository.add(a) && repository.add(b) ? 0 : 2;
         }
         QList<Transaction> rows;
+        if (arguments[1] == QStringLiteral("--probe-mutate")) {
+            if (!repository.findAll(rows) || rows.size() != 2)
+                return 4;
+            Transaction edited(rows[0].id(), QStringLiteral("咖啡"), 3250,
+                               QStringLiteral("餐饮"), QDate(2026, 10, 14));
+            return repository.update(edited) && repository.remove(rows[1].id()) ? 0 : 5;
+        }
+        if (arguments[1] == QStringLiteral("--probe-read-mutated")) {
+            return repository.findAll(rows) && rows.size() == 1
+                && rows[0].id() > 0 && rows[0].description() == QStringLiteral("咖啡")
+                && rows[0].amountCents() == 3250 && rows[0].date() == QDate(2026, 10, 14) ? 0 : 6;
+        }
         return repository.findAll(rows) && rows.size() == 2
             && rows[0].description() == QStringLiteral("午饭") && rows[0].amountCents() == 2800
             && rows[1].description() == QStringLiteral("地铁") && rows[1].amountCents() == 400

@@ -1,38 +1,50 @@
 # Kura C++
 
-基于 C++17、Qt 6 Widgets、Qt SQL、SQLite 和 CMake 的课程项目。
+基于 C++17、Qt 6 Widgets、Qt SQL、SQLite 和 CMake 的课程项目。当前版本为 0.3.0，已完成基础记账模块。
 
 ## 当前功能
 
-点击“记一笔”，填写消费名称、金额、分类和日期。保存成功后关闭弹窗并刷新列表；重新打开程序时自动读取消费记录。
+- 新增消费：名称、金额、分类、日期。
+- 修改消费：选中记录后点击“修改”，也可以双击记录；弹窗预填原始信息。
+- 删除消费：选中后点击“删除”，确认框显示名称和金额，默认选择取消。
+- 持久化：新增、修改、删除都会写入 SQLite，重新启动后自动加载。
+- 分类筛选：全部分类或餐饮、交通、购物、娱乐、学习、其他。
+- 日期筛选：勾选“按日期”，选择起止日期，范围包含起止两天。
+- 组合筛选：分类和日期同时生效，点击“筛选”应用；“重置”恢复全部记录。
+- 支出汇总：全部支出、本月支出、今日支出，以及当前筛选结果的笔数和金额。
+- 失败处理：写入失败保留输入和现有列表；不存在的记录不会被错误地新增回来。
 
-- 消费名称不能为空，保存时去除首尾空格，最多输入 100 个字符。
-- 金额必须大于 0，最多两位小数，上限为 99,999,999.99 元。
-- 分类：餐饮、交通、购物、娱乐、学习、其他。
-- 日期默认为今天，可以通过日历选择。
-- SQLite 自动生成编号，列表按消费日期倒序、同一天按编号倒序显示。
-- 保存失败时显示原因，保留表单内容，可以修正问题后再次保存。
-- 暂未实现编辑、删除、筛选、统计、预算等功能。
+消费名称保存时去除首尾空格，长度为 1 至 100 个字符。金额范围为 0.01 至 99,999,999.99 元，最多两位小数。记录按消费日期倒序、同一天按编号倒序显示。没有选中记录时，修改和删除按钮禁用。
+
+预算、统计图表、冷静期、Wishlist 和自定义分类管理尚未实现。
+
+## 筛选和汇总口径
+
+界面上的“显示范围”描述实际已应用的条件；仅更改控件不会立即改变列表，需要点击“筛选”。开始日期晚于结束日期时会提示错误，保留之前的结果。没有符合条件的记录时显示空列表和零金额。
+
+“全部支出”包含数据库中的全部记录，“本月支出”按本机当前日期所在的年月计算，“今日支出”按本机今天计算。这三个值不受筛选影响；“当前结果”的笔数和金额只统计符合分类和日期条件的记录。
+
+修改、删除后，列表和汇总同步刷新，仍保留已经应用的筛选条件。如果新增或修改后的记录不符合当前条件，会提示记录已保存，但不在当前结果中；点击“重置”即可查看。
+
+金额使用整数“分”存储、计算和格式化，例如 28 元是 2800 分。全局汇总和筛选结果来自同一次读取，避免列表与汇总使用不同的数据快照。
 
 ## 数据保存位置
 
-数据保存在 Qt 的本机应用数据目录 `QStandardPaths::AppLocalDataLocation` 下的 `kura.sqlite`，与源码和程序所在目录无关。Windows 通常为：
+数据保存在 `QStandardPaths::AppLocalDataLocation` 下的 `kura.sqlite`，与源码和程序目录无关。Windows 通常为：
 
 ```text
 %LOCALAPPDATA%\Kura\KuraCpp\kura.sqlite
 ```
 
-鼠标悬停在主窗口底部状态栏，可以查看实际文件路径。升级或移动程序不会主动清空数据；备份时先关闭程序，再复制数据库文件。
+鼠标悬停在主窗口底部状态栏，可以查看实际路径。备份时先关闭程序，再复制数据库文件。0.3.0 沿用 0.2.0 的数据库位置和表结构，更新程序后可以继续使用已有记录。
 
-第一次运行会自动创建目录和表。数据库打不开、文件损坏或缺少 SQLite 驱动时，主窗口会提示错误并禁用新增按钮，不会偷偷覆盖或清空数据；解决问题后重新启动。
-
-上一阶段只存在内存中的记录没有落盘，因此不能从旧程序恢复。实际数据库文件及构建目录已被 Git 忽略，不会随源码提交。
+数据库打不开、文件损坏或缺少 SQLite 驱动时，会提示错误并禁用操作，不会自动覆盖或清空数据。解决问题后重新启动。记录已写入但列表刷新失败时，会明确提示操作已经成功，避免重复新增。
 
 ## 编译运行
 
-在 Qt Creator 中打开 `CMakeLists.txt`，选择包含 Qt 6 Widgets、SQL、Test 的桌面 Kit，配置、构建并运行。不需要单独安装 SQLite 服务。
+在 Qt Creator 打开 `CMakeLists.txt`，选择包含 Qt 6 Widgets、SQL、Test 的桌面 Kit，配置、构建并运行。无需单独安装 SQLite 服务。
 
-也可以在已配置好 Qt 和编译器的终端运行：
+已配置好 Qt 和编译器的终端也可以运行：
 
 ```sh
 cmake -S . -B build -DCMAKE_PREFIX_PATH="你的 Qt 6 Kit 目录"
@@ -40,113 +52,65 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-MSVC 多配置构建可以在构建时加 `--config Debug`，测试时加 `-C Debug`。如果仅构建程序、不运行测试，可在配置时加 `-DBUILD_TESTING=OFF`，此时不需要 Qt Test。
+MSVC 多配置构建可以加 `--config Debug`，测试加 `-C Debug`。只构建程序时可以配置 `-DBUILD_TESTING=OFF`，不需要 Qt Test。
 
-Qt Kit 和编译器必须匹配，例如 MSVC Kit 配 MSVC、MinGW Kit 配对应的 MinGW。生成的程序位于构建目录；MSVC 多配置生成器通常在 `Debug` 或 `Release` 子目录。
+Qt Kit 和编译器必须匹配。MSYS2 Qt/MinGW 如果出现 `moc: Cannot create ... Illegal byte sequence`，请使用纯英文路径构建。新增源文件时，在 CMake 对应的 `kura_core` 或 `kura_widgets` 列表中登记。
 
-如果使用 MSYS2 的 Qt/MinGW，遇到 `moc: Cannot create ... Illegal byte sequence`，请在纯英文路径中构建项目；这类工具可能无法处理中文目录。
+给没有 Qt 环境的电脑提供程序时，应使用对应 Kit 的 `windeployqt`，检查包含 `Qt6Sql` 和 `sqldrivers/qsqlite` 插件。MSYS2 还需补齐 MinGW 和第三方依赖 DLL。交付完整程序目录，不能只发一个 exe。
 
-给没有 Qt 环境的电脑提供程序时，应使用对应 Kit 的 `windeployqt` 部署运行库，检查包含 `Qt6Sql` 和 `sqldrivers/qsqlite` 插件。MSYS2 还需补齐它们依赖的 MinGW/第三方 DLL。交付完整程序目录，不能只发一个 exe。
-
-## 代码结构
+## 代码结构与接续接口
 
 | 文件 | 职责 |
 |---|---|
-| `src/Transaction.h/.cpp` | 消费数据、统一分类、数据校验 |
-| `src/DatabaseManager.h/.cpp` | 数据路径、数据库连接、建表、连接清理 |
-| `src/TransactionRepository.h/.cpp` | 参数绑定、新增记录、查询列表、数据库错误 |
-| `src/AddTransactionDialog.h/.cpp` | 表单、输入校验、保存请求和失败提示 |
-| `src/mainwindow.h/.cpp` | 连接表单和数据接口、加载和刷新列表 |
-| `src/main.cpp` | 应用名称、程序入口 |
-| `tests/` | 数据持久化、金额精度和界面失败路径测试 |
+| `src/Transaction.h/.cpp` | 消费数据、校验、统一分类和金额格式化 |
+| `src/DatabaseManager.h/.cpp` | 数据路径、连接、建表、连接清理 |
+| `src/TransactionRepository.h/.cpp` | 新增、修改、删除、查询、数据库错误 |
+| `src/TransactionFilter.h/.cpp` | 分类和日期条件校验、记录匹配、条件描述 |
+| `src/ExpenseSummary.h/.cpp` | 全部、本月、今日及筛选结果的整数金额汇总 |
+| `src/AddTransactionDialog.h/.cpp` | 新增／修改表单、输入校验、保存失败保留输入 |
+| `src/mainwindow.h/.cpp` | 操作入口、删除确认、筛选、列表和汇总刷新 |
+| `tests/` | 数据库、界面、筛选和汇总测试 |
 
-金额以整数“分”保存，`28.00` 元就是 `2800` 分。业务计算优先使用 `amountCents()`；`amount()` 只是读取以元表示的值，列表金额通过整数拼接显示两位小数。
-
-当前表结构：
-
-```sql
-transactions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    description TEXT NOT NULL,
-    amount_cents INTEGER NOT NULL,
-    category TEXT NOT NULL,
-    date TEXT NOT NULL
-)
-```
-
-实际建表语句还包含名称长度、金额范围和类型、日期长度等约束。日期存储为 `yyyy-MM-dd`，查询和插入统一由 Repository 执行。
-
-## 给 B 的接续说明
-
-### 已经可用的接口
+Repository 接口：
 
 ```cpp
-DatabaseManager database; // 默认本机应用数据路径
-if (!database.initialize()) {
-    // 读取 database.lastError() 并提示用户。
-}
-TransactionRepository repository(database);
-
-Transaction item(0, QStringLiteral("午饭"), 2800,
-                 QStringLiteral("餐饮"), QDate::currentDate());
-if (repository.add(item)) {
-    // item.id() 已回填 SQLite 生成的编号。
-}
-
-QList<Transaction> records;
-if (!repository.findAll(records)) {
-    // 使用 repository.lastError() 区分查询失败和正常的空列表。
-}
+bool add(Transaction &transaction);          // 新记录 id=0，成功后回填编号
+bool update(const Transaction &transaction); // 已有记录 id>0，保留原编号
+bool remove(qint64 id);                      // 不存在的编号返回失败
+bool findAll(QList<Transaction> &records);   // 失败时保留调用者原有列表
+QString lastError() const;
 ```
 
-`Transaction` 构造函数第三个参数单位是“分”，不是“元”。新记录编号必须为 0。已经保存的对象不能再次调用 `add()`，避免无意重复插入。
+`Transaction` 构造函数第三个参数单位是“分”，不是“元”。所有 SQL 使用绑定参数，通过稳定的数据库编号定位记录，不能把表格行号当编号。第 0 列的 `Qt::UserRole` 保存编号。
 
-弹窗保存流程：
-
-```text
-点击保存
-→ AddTransactionDialog::accept() 校验输入
-→ 发出 saveRequested 信号（此时不会关闭弹窗）
-→ MainWindow 读取 dialog->transaction()
-→ m_repository.add(transaction)
-→ 失败：dialog->showSaveError(...)，保留输入
-→ 成功：dialog->completeSave()，然后 reloadTransactions(transaction.id())
-```
-
-数据库写入成功、但列表刷新失败时，主窗口会明确提示“记录已保存”，避免用户重试插入导致重复记录。查询失败也不会先清空现有表格。
-
-### B 接下来做编辑和删除
-
-1. 在 `TransactionRepository` 增加 `update(const Transaction &)` 和 `remove(qint64 id)`，使用绑定参数和明确的成功/失败结果；检查目标编号是否存在。
-2. 在主窗口增加编辑、删除入口；删除前让用户确认，取消不操作数据库。
-3. 选中记录的数据库编号已存在第 0 列的 `Qt::UserRole`：
+新增和修改共用弹窗：
 
 ```cpp
-const int row = m_transactionTable->currentRow();
-if (row >= 0) {
-    const qint64 id = m_transactionTable->item(row, 0)->data(Qt::UserRole).toLongLong();
-    // 用 id 修改/删除，不能把 row 当成数据库编号。
-}
+new AddTransactionDialog(parent);           // 新增
+new AddTransactionDialog(existing, parent); // 修改，保留 existing.id()
 ```
 
-4. 主窗口的 `m_transactions` 是最近一次成功加载的记录，可按编号查找数据来预填编辑弹窗。
-5. 修改或删除成功后调用 `reloadTransactions()`；失败时提示错误，保留界面数据。
-6. 给新接口补充“取消不变、失败不变、重启后仍正确”的测试。新增源文件时，在 CMake 对应的 `kura_core` 或 `kura_widgets` 列表中登记。
+表单校验成功后发出 `saveRequested`，此时不会关闭。主窗口调用 `add` 或 `update`；失败时调用 `showSaveError`，成功后调用 `completeSave` 并刷新列表。删除确认采用取消作为默认和 Esc 操作，只有明确点击删除才操作数据库。
 
-## 验收和测试
+筛选在读取成功后的记录快照上执行。`m_transactions` 保存当前可见记录，`m_filter` 保存实际应用的条件。后续预算和统计可直接复用 Repository、整数金额和汇总逻辑。
 
-1. 启动程序，点击“记一笔”，确认弹窗正常出现，日期为今天。
-2. 输入“午饭 / 28 / 餐饮”，保存，确认表格新增一行且金额为 `¥28.00`。
-3. 再添加“地铁 / 4 / 交通”，确认两条记录都存在。
-4. 填写后点击取消、按 Esc 或关闭弹窗，确认记录数量不变。
-5. 消费名称留空或只输入空格，保存时应提示错误并保持弹窗打开。
-6. 金额为 0 时不能保存；输入 `0.01` 可以保存。
-7. 更改分类和日期后保存，确认表格与输入一致。
-8. 多次打开弹窗，确认表单重置且不会重复添加记录。
-9. 关闭程序后重新打开，确认消费记录仍在。
-10. 暂时占用数据库导致保存失败，确认表单不关闭、输入不丢；解除占用后重试只新增一次。
+## 验收
 
-自动测试使用临时数据库，不读写实际个人消费数据：
+1. 新增“午饭 / 28 / 餐饮”，再新增“地铁 / 4 / 交通”，确认总支出为 32 元。
+2. 修改午饭为 30 元，确认总支出更新为 34 元，重启后仍正确。
+3. 删除地铁时先取消，确认数据不变；再次确认删除，总支出变为 30 元，重启后不会恢复已删除记录。
+4. 分别测试分类、日期、分类加日期，以及起止日期同一天；记录包含范围两端。
+5. 开始日期晚于结束日期时，显示错误，原列表和汇总不变。
+6. 选择没有记录的条件，确认当前结果为 0 笔、0 元，全局汇总不变；重置后恢复全部。
+7. 在筛选状态新增或修改不匹配条件的记录，确认有提示，重置后可以找到。
+8. 名称为空、金额为 0 时不能保存；0.01 元可以保存。
+9. 数据库被占用或只读时，新增和修改保留输入，删除不改变列表；解除占用后可以重试。
+10. 删除最后一条记录后，列表为空，所有汇总归零，修改和删除禁用。
 
-- `repository_tests`：跨进程保存与读取、稳定编号、金额边界、整数精度、中文和引号、非法数据、数据库错误、连接隔离与清理。
-- `window_tests`：启动加载、回车保存、取消及输入校验、锁定数据库时保留输入及重试、初始化失败提示、刷新失败保留列表。
+## 自动测试
+
+测试使用临时数据库，不读写实际个人消费数据。
+
+- `repository_tests`：跨进程新增／修改／删除、编号稳定、重复及不存在编号、非法输入、中文和引号、数据库锁与只读、连接隔离及失败保留原数据。
+- `window_tests`：新增和回车保存、编辑预填和取消、删除确认和取消、组合筛选及重置、无匹配结果、修改后移出筛选、错误保留输入、重启恢复、列表和汇总同步。
+- `summary_tests`：分类和日期边界、闰日、跨月跨年、空结果、小数精度、超过 32 位整数范围的汇总。

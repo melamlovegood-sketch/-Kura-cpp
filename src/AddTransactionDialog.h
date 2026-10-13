@@ -19,6 +19,7 @@ class AddTransactionDialog : public QDialog
 
 public:
     explicit AddTransactionDialog(QWidget *parent = nullptr);
+    explicit AddTransactionDialog(const Transaction &transaction, QWidget *parent = nullptr);
 
     QString description() const;
     double amount() const;
@@ -35,6 +36,7 @@ public slots:
     void accept() override;
 
 private:
+    qint64 m_transactionId = 0;
     QLineEdit *m_descriptionEdit = nullptr;
     QDoubleSpinBox *m_amountSpinBox = nullptr;
     QComboBox *m_categoryComboBox = nullptr;

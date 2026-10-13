@@ -21,6 +21,7 @@ public:
 
     QString validationError() const;
     static QStringList categories();
+    static QString formatAmount(qint64 cents);
 
 private:
     qint64 m_id;
