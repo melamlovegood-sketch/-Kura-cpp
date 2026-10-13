@@ -15,6 +15,8 @@
 #include <QMessageBox>
 #include <QProcess>
 #include <QPushButton>
+#include <QPlainTextEdit>
+#include <QTimeEdit>
 #include <QScrollBar>
 #include <QSpinBox>
 #include <QSqlQuery>
@@ -428,11 +430,17 @@ void WishlistTests::purchaseUpdatesWindow()
         dialog = window.findChild<AddTransactionDialog *>();
         QVERIFY(dialog);
         dialog->findChild<QDoubleSpinBox *>(QStringLiteral("amountSpinBox"))->setValue(250);
+        QVERIFY(dialog->time().isValid());
+        dialog->findChild<QTimeEdit *>(QStringLiteral("timeEdit"))->setTime(QTime(18, 19, 20));
+        dialog->findChild<QPlainTextEdit *>(QStringLiteral("noteEdit"))->setPlainText(QStringLiteral("购买后补充的消费备注"));
         button(*dialog, "saveButton")->click();
         settle();
         QCOMPARE(table->item(1, 3)->text(), QStringLiteral("已购买"));
         QVERIFY(!button(window, "purchaseWishButton")->isEnabled());
         QCOMPARE(window.findChild<QTableWidget *>(QStringLiteral("transactionTable"))->rowCount(), 1);
+        auto *expenses = window.findChild<QTableWidget *>(QStringLiteral("transactionTable"));
+        QCOMPARE(expenses->item(0, 0)->text(), QDate::currentDate().toString(Qt::ISODate) + QStringLiteral(" 18:19:20"));
+        QCOMPARE(expenses->item(0, 4)->text(), QStringLiteral("购买后补充的消费备注"));
         QCOMPARE(text(window, "totalExpenseLabel"), QStringLiteral("全部支出：¥250.00"));
         QCOMPARE(text(window, "budgetSpentLabel"), QStringLiteral("已消费：¥250.00"));
         QCOMPARE(text(window, "budgetRemainingLabel"), QStringLiteral("剩余额度：-¥50.00"));
@@ -440,6 +448,9 @@ void WishlistTests::purchaseUpdatesWindow()
     }
     MainWindow restarted(path);
     QCOMPARE(text(restarted, "totalExpenseLabel"), QStringLiteral("全部支出：¥250.00"));
+    auto *expenses = restarted.findChild<QTableWidget *>(QStringLiteral("transactionTable"));
+    QCOMPARE(expenses->item(0, 0)->text(), QDate::currentDate().toString(Qt::ISODate) + QStringLiteral(" 18:19:20"));
+    QCOMPARE(expenses->item(0, 4)->text(), QStringLiteral("购买后补充的消费备注"));
     auto *table = restarted.findChild<QTableWidget *>(QStringLiteral("wishlistTable"));
     QCOMPARE(table->item(1, 3)->text(), QStringLiteral("已购买"));
 }
