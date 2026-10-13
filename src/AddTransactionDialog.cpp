@@ -1,14 +1,18 @@
 #include "AddTransactionDialog.h"
 
 #include <QComboBox>
+#include <QCheckBox>
 #include <QDateEdit>
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
 #include <QFormLayout>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QLocale>
 #include <QPushButton>
+#include <QPlainTextEdit>
+#include <QTimeEdit>
 #include <QVBoxLayout>
 
 AddTransactionDialog::AddTransactionDialog(QWidget *parent)
@@ -52,6 +56,27 @@ AddTransactionDialog::AddTransactionDialog(QWidget *parent)
     m_dateEdit->setDisplayFormat(QStringLiteral("yyyy-MM-dd"));
     m_dateEdit->setCalendarPopup(true);
     form->addRow(QStringLiteral("日期"), m_dateEdit);
+    auto *timeRow = new QWidget(this);
+    auto *timeLayout = new QHBoxLayout(timeRow);
+    timeLayout->setContentsMargins(0, 0, 0, 0);
+    m_timeEdit = new QTimeEdit(QTime::currentTime(), timeRow);
+    m_timeEdit->setObjectName(QStringLiteral("timeEdit"));
+    m_timeEdit->setDisplayFormat(QStringLiteral("HH:mm:ss"));
+    timeLayout->addWidget(m_timeEdit);
+    m_timeKnownCheckBox = new QCheckBox(QStringLiteral("补填旧记录时间"), timeRow);
+    m_timeKnownCheckBox->setObjectName(QStringLiteral("timeKnownCheckBox"));
+    m_timeKnownCheckBox->setChecked(true);
+    m_timeKnownCheckBox->hide();
+    m_timeKnownCheckBox->setToolTip(QStringLiteral("原记录未保存具体时间；仅在知道实际时间时补填。"));
+    connect(m_timeKnownCheckBox, &QCheckBox::toggled, m_timeEdit, &QTimeEdit::setEnabled);
+    timeLayout->addWidget(m_timeKnownCheckBox);
+    form->addRow(QStringLiteral("具体时间"), timeRow);
+    m_noteEdit = new QPlainTextEdit(this);
+    m_noteEdit->setObjectName(QStringLiteral("noteEdit"));
+    m_noteEdit->setPlaceholderText(QStringLiteral("选填，最多 1000 个字符"));
+    m_noteEdit->setMaximumHeight(100);
+    m_noteEdit->setTabChangesFocus(true);
+    form->addRow(QStringLiteral("备注"), m_noteEdit);
     layout->addLayout(form);
 
     m_errorLabel = new QLabel(this);
@@ -86,6 +111,12 @@ AddTransactionDialog::AddTransactionDialog(const Transaction &transaction, QWidg
     m_amountSpinBox->setValue(transaction.amount());
     m_categoryComboBox->setCurrentText(transaction.category());
     m_dateEdit->setDate(transaction.date());
+    m_noteEdit->setPlainText(transaction.note());
+    const bool unknownExistingTime = transaction.id() > 0 && !transaction.time().isValid();
+    m_timeKnownCheckBox->setVisible(unknownExistingTime);
+    m_timeKnownCheckBox->setChecked(!unknownExistingTime);
+    m_timeEdit->setTime(transaction.time().isValid() ? transaction.time()
+        : (unknownExistingTime ? QTime(0, 0) : QTime::currentTime()));
 }
 
 QString AddTransactionDialog::description() const
@@ -106,6 +137,16 @@ QString AddTransactionDialog::category() const
 QDate AddTransactionDialog::date() const
 {
     return m_dateEdit->date();
+}
+
+QTime AddTransactionDialog::time() const
+{
+    return m_timeKnownCheckBox->isChecked() ? m_timeEdit->time() : QTime();
+}
+
+QString AddTransactionDialog::note() const
+{
+    return m_noteEdit->toPlainText();
 }
 
 void AddTransactionDialog::accept()
@@ -140,6 +181,14 @@ void AddTransactionDialog::accept()
     }
 
     m_dateEdit->interpretText();
+    if (m_timeKnownCheckBox->isChecked()) {
+        if (!m_timeEdit->hasAcceptableInput()) {
+            showSaveError(QStringLiteral("请输入有效的具体时间（时:分:秒）。"));
+            m_timeEdit->setFocus();
+            return;
+        }
+        m_timeEdit->interpretText();
+    }
     const QString error = transaction().validationError();
     if (!error.isEmpty()) {
         showSaveError(error);
@@ -152,7 +201,7 @@ void AddTransactionDialog::accept()
 
 Transaction AddTransactionDialog::transaction() const
 {
-    return Transaction(m_transactionId, description(), qRound64(amount() * 100.0), category(), date());
+    return Transaction(m_transactionId, description(), qRound64(amount() * 100.0), category(), date(), time(), note());
 }
 
 void AddTransactionDialog::showSaveError(const QString &message)

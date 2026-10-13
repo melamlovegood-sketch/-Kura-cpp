@@ -130,11 +130,11 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
     range->addWidget(m_filteredSummaryLabel);
     layout->addLayout(range);
 
-    m_transactionTable = new QTableWidget(0, 4, central);
+    m_transactionTable = new QTableWidget(0, 5, central);
     m_transactionTable->setObjectName(QStringLiteral("transactionTable"));
     m_transactionTable->setHorizontalHeaderLabels({
-        QStringLiteral("日期"), QStringLiteral("名称"),
-        QStringLiteral("分类"), QStringLiteral("金额")
+        QStringLiteral("消费时间"), QStringLiteral("名称"),
+        QStringLiteral("分类"), QStringLiteral("金额"), QStringLiteral("备注")
     });
     m_transactionTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_transactionTable->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -142,6 +142,7 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
     m_transactionTable->setAlternatingRowColors(true);
     m_transactionTable->verticalHeader()->hide();
     m_transactionTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    m_transactionTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     layout->addWidget(m_transactionTable, 1);
 
     m_emptyHint = new QLabel(QStringLiteral("暂无消费记录，点击“记一笔”添加。"), central);
@@ -305,7 +306,10 @@ bool MainWindow::reloadTransactions(qint64 selectedId)
     for (const auto &transaction : m_transactions) {
         const int row = m_transactionTable->rowCount();
         m_transactionTable->insertRow(row);
-        auto *dateItem = new QTableWidgetItem(transaction.date().toString(Qt::ISODate));
+        const QString dateText = transaction.date().toString(Qt::ISODate)
+            + (transaction.time().isValid() ? QStringLiteral(" ") + transaction.time().toString(QStringLiteral("HH:mm:ss"))
+                                           : QStringLiteral("（时间未记录）"));
+        auto *dateItem = new QTableWidgetItem(dateText);
         dateItem->setData(Qt::UserRole, transaction.id());
         m_transactionTable->setItem(row, 0, dateItem);
         m_transactionTable->setItem(row, 1, new QTableWidgetItem(transaction.description()));
@@ -313,6 +317,14 @@ bool MainWindow::reloadTransactions(qint64 selectedId)
         auto *amountItem = new QTableWidgetItem(Transaction::formatAmount(transaction.amountCents()));
         amountItem->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
         m_transactionTable->setItem(row, 3, amountItem);
+        QString notePreview = transaction.note();
+        notePreview.replace(QLatin1Char('\n'), QLatin1Char(' '));
+        notePreview.replace(QLatin1Char('\r'), QLatin1Char(' '));
+        if (notePreview.size() > 60)
+            notePreview = notePreview.left(60) + QStringLiteral("…");
+        auto *noteItem = new QTableWidgetItem(notePreview);
+        noteItem->setToolTip(transaction.note());
+        m_transactionTable->setItem(row, 4, noteItem);
         if (transaction.id() == selectedId)
             selectedRow = row;
     }

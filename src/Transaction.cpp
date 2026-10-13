@@ -1,9 +1,11 @@
 #include "Transaction.h"
 
 Transaction::Transaction(qint64 id, const QString &description, qint64 amountCents,
-                         const QString &category, const QDate &date)
+                         const QString &category, const QDate &date,
+                         const QTime &time, const QString &note)
     : m_id(id), m_description(description.trimmed()), m_amountCents(amountCents),
-      m_category(category), m_date(date)
+      m_category(category), m_date(date), m_time(time.isValid() ? QTime(time.hour(), time.minute(), time.second()) : QTime()),
+      m_note(note)
 {
 }
 
@@ -13,6 +15,8 @@ qint64 Transaction::amountCents() const { return m_amountCents; }
 double Transaction::amount() const { return static_cast<double>(m_amountCents) / 100.0; }
 QString Transaction::category() const { return m_category; }
 QDate Transaction::date() const { return m_date; }
+QTime Transaction::time() const { return m_time; }
+QString Transaction::note() const { return m_note; }
 
 QString Transaction::validationError() const
 {
@@ -26,6 +30,8 @@ QString Transaction::validationError() const
         return QStringLiteral("请选择有效的消费分类。");
     if (!m_date.isValid() || m_date.year() < 1 || m_date.year() > 9999)
         return QStringLiteral("请选择有效的消费日期。");
+    if (m_note.size() > MaximumNoteLength)
+        return QStringLiteral("备注最多填写 1000 个字符。");
     return {};
 }
 

@@ -4,8 +4,10 @@
 #include <QFileInfo>
 #include <QSqlError>
 #include <QSqlQuery>
+#include <QSet>
 #include <QStandardPaths>
 #include <QUuid>
+#include <QVariant>
 
 DatabaseManager::DatabaseManager(const QString &databasePath)
     : m_databasePath(databasePath.isEmpty() ? defaultDatabasePath() : databasePath),
@@ -69,9 +71,50 @@ bool DatabaseManager::initialize()
             "amount_cents INTEGER NOT NULL CHECK(typeof(amount_cents) = 'integer' "
             "AND amount_cents BETWEEN 1 AND 9999999999), "
             "category TEXT NOT NULL CHECK(length(category) > 0), "
-            "date TEXT NOT NULL CHECK(length(date) = 10))"))) {
+            "date TEXT NOT NULL CHECK(length(date) = 10), "
+            "occurred_time TEXT NOT NULL DEFAULT '' CHECK(occurred_time = '' OR length(occurred_time) = 8), "
+            "note TEXT NOT NULL DEFAULT '' CHECK(length(note) <= 1000))"))) {
         m_lastError = QStringLiteral("无法初始化消费记录表：%1").arg(query.lastError().text());
         return false;
+    }
+    // Add fields without rebuilding the table or changing existing ids and dates.
+    if (!query.exec(QStringLiteral("PRAGMA table_info(transactions)"))) {
+        m_lastError = QStringLiteral("无法检查消费记录表结构：%1").arg(query.lastError().text());
+        return false;
+    }
+    QSet<QString> columns;
+    while (query.next())
+        columns.insert(query.value(1).toString());
+    if (query.lastError().isValid()) {
+        m_lastError = QStringLiteral("无法读取消费记录表结构：%1").arg(query.lastError().text());
+        return false;
+    }
+    query.finish();
+    if (!columns.contains(QStringLiteral("occurred_time")) || !columns.contains(QStringLiteral("note"))) {
+        if (!connection.transaction()) {
+            m_lastError = QStringLiteral("无法开始消费记录升级：%1").arg(connection.lastError().text());
+            return false;
+        }
+        const auto migrate = [&](const QString &column, const QString &statement) {
+            if (columns.contains(column) || query.exec(statement))
+                return true;
+            m_lastError = QStringLiteral("无法升级消费记录表：%1").arg(query.lastError().text());
+            query.finish();
+            connection.rollback();
+            return false;
+        };
+        if (!migrate(QStringLiteral("occurred_time"), QStringLiteral(
+                "ALTER TABLE transactions ADD COLUMN occurred_time TEXT NOT NULL DEFAULT '' "
+                "CHECK(occurred_time = '' OR length(occurred_time) = 8)"))
+            || !migrate(QStringLiteral("note"), QStringLiteral(
+                "ALTER TABLE transactions ADD COLUMN note TEXT NOT NULL DEFAULT '' CHECK(length(note) <= 1000)")))
+            return false;
+        query.finish();
+        if (!connection.commit()) {
+            m_lastError = QStringLiteral("无法提交消费记录升级：%1").arg(connection.lastError().text());
+            connection.rollback();
+            return false;
+        }
     }
     if (!query.exec(QStringLiteral(
             "CREATE TABLE IF NOT EXISTS monthly_budgets ("

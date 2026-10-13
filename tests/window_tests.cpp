@@ -1,5 +1,6 @@
 #include "AddTransactionDialog.h"
 #include "DatabaseManager.h"
+#include "TransactionRepository.h"
 #include "mainwindow.h"
 
 #include <QApplication>
@@ -11,6 +12,8 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QPlainTextEdit>
+#include <QTimeEdit>
 #include <QMessageBox>
 #include <QStatusBar>
 #include <QSignalSpy>
@@ -57,6 +60,8 @@ private slots:
     void lockedEditsAndDeletes();
     void missingEditedRecordNotRecreated();
     void editedRecordMovesOutOfFilter();
+    void notesAndTimeSaveEditRestart();
+    void legacyTimeAndNoteValidation();
 };
 
 void WindowTests::initTestCase()
@@ -175,6 +180,8 @@ void WindowTests::lockedDatabasePreservesInputAndRetry()
     auto *dialog = openDialog(window);
     QVERIFY(dialog);
     fill(*dialog, QStringLiteral("奶茶"), 12.34, QStringLiteral("餐饮"), QDate(2026, 10, 13));
+    dialog->findChild<QTimeEdit *>(QStringLiteral("timeEdit"))->setTime(QTime(15, 16, 17));
+    dialog->findChild<QPlainTextEdit *>(QStringLiteral("noteEdit"))->setPlainText(QStringLiteral("失败时保留的备注"));
     QSignalSpy accepted(dialog, &QDialog::accepted);
     auto *save = dialog->findChild<QPushButton *>(QStringLiteral("saveButton"));
     save->click();
@@ -184,6 +191,8 @@ void WindowTests::lockedDatabasePreservesInputAndRetry()
     QVERIFY(save->isEnabled());
     QCOMPARE(dialog->description(), QStringLiteral("奶茶"));
     QCOMPARE(dialog->amount(), 12.34);
+    QCOMPARE(dialog->time(), QTime(15, 16, 17));
+    QCOMPARE(dialog->note(), QStringLiteral("失败时保留的备注"));
     QVERIFY(dialog->findChild<QLabel *>(QStringLiteral("validationErrorLabel"))->text()
                 .contains(QStringLiteral("占用")));
     auto *table = window.findChild<QTableWidget *>(QStringLiteral("transactionTable"));
@@ -575,6 +584,126 @@ void WindowTests::editedRecordMovesOutOfFilter()
     QCOMPARE(table->rowCount(), 1);
     QCOMPARE(table->item(0, 0)->data(Qt::UserRole).toLongLong(), id);
     QCOMPARE(table->item(0, 1)->text(), QStringLiteral("教材"));
+}
+
+void WindowTests::notesAndTimeSaveEditRestart()
+{
+    QTemporaryDir directory;
+    const QString path = directory.filePath(QStringLiteral("details-ui.sqlite"));
+    const QString note = QStringLiteral("午饭\n与同学 AA，<b>文字</b>");
+    qint64 id = 0;
+    {
+        MainWindow window(path);
+        window.show();
+        settle();
+        auto *table = window.findChild<QTableWidget *>(QStringLiteral("transactionTable"));
+        auto *dialog = openDialog(window);
+        fill(*dialog, QStringLiteral("午饭"), 28, QStringLiteral("餐饮"), QDate(2026, 10, 13));
+        dialog->findChild<QTimeEdit *>(QStringLiteral("timeEdit"))->setTime(QTime(12, 34, 56));
+        dialog->findChild<QPlainTextEdit *>(QStringLiteral("noteEdit"))->setPlainText(note);
+        const QString preview = qEnvironmentVariable("KURA_PREVIEW_DIR");
+        if (!preview.isEmpty()) {
+            QVERIFY(QDir().mkpath(preview));
+            QVERIFY(dialog->grab().save(preview + QStringLiteral("/transaction-details-dialog.png")));
+        }
+        dialog->findChild<QPushButton *>(QStringLiteral("saveButton"))->click();
+        settle();
+        QCOMPARE(table->rowCount(), 1);
+        QCOMPARE(table->columnCount(), 5);
+        QCOMPARE(table->item(0, 0)->text(), QStringLiteral("2026-10-13 12:34:56"));
+        QCOMPARE(table->item(0, 4)->toolTip(), note);
+        QVERIFY(!table->item(0, 4)->text().contains(QLatin1Char('\n')));
+        id = table->item(0, 0)->data(Qt::UserRole).toLongLong();
+        if (!preview.isEmpty())
+            QVERIFY(window.grab().save(preview + QStringLiteral("/transaction-details-list.png")));
+        table->selectRow(0);
+        window.findChild<QPushButton *>(QStringLiteral("editTransactionButton"))->click();
+        settle();
+        dialog = window.findChild<AddTransactionDialog *>();
+        QVERIFY(dialog);
+        QCOMPARE(dialog->time(), QTime(12, 34, 56));
+        QCOMPARE(dialog->note(), note);
+        dialog->findChild<QTimeEdit *>(QStringLiteral("timeEdit"))->setTime(QTime(0, 0, 1));
+        dialog->findChild<QPlainTextEdit *>(QStringLiteral("noteEdit"))->clear();
+        dialog->findChild<QPushButton *>(QStringLiteral("saveButton"))->click();
+        settle();
+        QCOMPARE(table->item(0, 0)->text(), QStringLiteral("2026-10-13 00:00:01"));
+        QVERIFY(table->item(0, 4)->text().isEmpty());
+        table->selectRow(0);
+        window.findChild<QPushButton *>(QStringLiteral("editTransactionButton"))->click();
+        settle();
+        dialog = window.findChild<AddTransactionDialog *>();
+        dialog->findChild<QTimeEdit *>(QStringLiteral("timeEdit"))->setTime(QTime(8, 9, 10));
+        dialog->findChild<QPlainTextEdit *>(QStringLiteral("noteEdit"))->setPlainText(QStringLiteral("取消的改动"));
+        dialog->reject();
+        settle();
+        QCOMPARE(table->item(0, 0)->text(), QStringLiteral("2026-10-13 00:00:01"));
+        QVERIFY(table->item(0, 4)->text().isEmpty());
+    }
+    MainWindow restarted(path);
+    auto *table = restarted.findChild<QTableWidget *>(QStringLiteral("transactionTable"));
+    QCOMPARE(table->rowCount(), 1);
+    QCOMPARE(table->item(0, 0)->data(Qt::UserRole).toLongLong(), id);
+    QCOMPARE(table->item(0, 0)->text(), QStringLiteral("2026-10-13 00:00:01"));
+    QVERIFY(table->item(0, 4)->text().isEmpty());
+}
+
+void WindowTests::legacyTimeAndNoteValidation()
+{
+    // Other modules can prefill a new purchase through the same constructor.
+    AddTransactionDialog newPurchase(Transaction(0, QStringLiteral("预填消费"), 100,
+        QStringLiteral("其他"), QDate::currentDate()));
+    QVERIFY(newPurchase.time().isValid());
+    QVERIFY(newPurchase.findChild<QTimeEdit *>(QStringLiteral("timeEdit"))->isEnabled());
+    QVERIFY(newPurchase.findChild<QCheckBox *>(QStringLiteral("timeKnownCheckBox"))->isHidden());
+    QTemporaryDir directory;
+    const QString path = directory.filePath(QStringLiteral("legacy-ui.sqlite"));
+    {
+        DatabaseManager database(path);
+        QVERIFY(database.initialize());
+        TransactionRepository repository(database);
+        Transaction legacy(0, QStringLiteral("旧记录"), 100, QStringLiteral("其他"), QDate(2026, 10, 13));
+        QVERIFY(repository.add(legacy));
+    }
+    MainWindow window(path);
+    window.show();
+    settle();
+    auto *table = window.findChild<QTableWidget *>(QStringLiteral("transactionTable"));
+    QVERIFY(table->item(0, 0)->text().contains(QStringLiteral("时间未记录")));
+    table->selectRow(0);
+    window.findChild<QPushButton *>(QStringLiteral("editTransactionButton"))->click();
+    settle();
+    auto *dialog = window.findChild<AddTransactionDialog *>();
+    auto *time = dialog->findChild<QTimeEdit *>(QStringLiteral("timeEdit"));
+    auto *known = dialog->findChild<QCheckBox *>(QStringLiteral("timeKnownCheckBox"));
+    auto *note = dialog->findChild<QPlainTextEdit *>(QStringLiteral("noteEdit"));
+    auto *save = dialog->findChild<QPushButton *>(QStringLiteral("saveButton"));
+    QVERIFY(!dialog->time().isValid());
+    QVERIFY(!time->isEnabled());
+    QVERIFY(known->isVisible());
+    note->setPlainText(QString(1001, QLatin1Char('x')));
+    save->click();
+    settle();
+    QVERIFY(dialog->isVisible());
+    QVERIFY(dialog->findChild<QLabel *>(QStringLiteral("validationErrorLabel"))->text().contains(QStringLiteral("1000")));
+    QCOMPARE(note->toPlainText().size(), 1001);
+    note->setPlainText(QStringLiteral("只补备注"));
+    save->click();
+    settle();
+    QVERIFY(table->item(0, 0)->text().contains(QStringLiteral("时间未记录")));
+    QCOMPARE(table->item(0, 4)->text(), QStringLiteral("只补备注"));
+    table->selectRow(0);
+    window.findChild<QPushButton *>(QStringLiteral("editTransactionButton"))->click();
+    settle();
+    dialog = window.findChild<AddTransactionDialog *>();
+    dialog->findChild<QCheckBox *>(QStringLiteral("timeKnownCheckBox"))->setChecked(true);
+    time = dialog->findChild<QTimeEdit *>(QStringLiteral("timeEdit"));
+    QVERIFY(time->isEnabled());
+    time->setTime(QTime(23, 59, 59));
+    dialog->findChild<QPushButton *>(QStringLiteral("saveButton"))->click();
+    settle();
+    QCOMPARE(table->item(0, 0)->text(), QStringLiteral("2026-10-13 23:59:59"));
+    QCOMPARE(table->item(0, 4)->text(), QStringLiteral("只补备注"));
 }
 
 QTEST_MAIN(WindowTests)
