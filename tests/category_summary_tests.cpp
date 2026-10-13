@@ -41,6 +41,9 @@ class CategorySummaryTests : public QObject
 private slots:
     void emptyAndMonthBoundaries();
     void allCategoriesAndExactCents();
+    void countsSharesAndChanges();
+    void zeroMonthAndSingleCategory();
+    void arbitraryMonthAndPercentageFormatting();
     void refreshWithCrudAndFilters();
     void loadFailurePreservesSummary();
     void preview();
@@ -53,6 +56,11 @@ void CategorySummaryTests::emptyAndMonthBoundaries()
     for (int row = 0; row < empty.size(); ++row) {
         QCOMPARE(empty[row].category, Transaction::categories()[row]);
         QCOMPARE(empty[row].amountCents, 0);
+        QCOMPARE(empty[row].transactionCount, 0);
+        QCOMPARE(empty[row].percentage, 0.0);
+        QCOMPARE(empty[row].previousMonthAmountCents, 0);
+        QCOMPARE(empty[row].changeCents, 0);
+        QCOMPARE(empty[row].formattedPercentage(), QStringLiteral("0.0%"));
     }
     const QList<Transaction> rows{
         {1, "A", 10, QStringLiteral("餐饮"), QDate(2024, 2, 1)},
@@ -84,12 +92,119 @@ void CategorySummaryTests::allCategoriesAndExactCents()
     qint64 sum = 0;
     for (const auto &entry : CategorySummary::calculate(rows, today)) {
         QCOMPARE(entry.amountCents, Transaction::MaximumAmountCents + 1);
+        QCOMPARE(entry.transactionCount, 2);
+        QCOMPARE(entry.changeCents, entry.amountCents);
+        QCOMPARE(entry.formattedPercentage(), QStringLiteral("16.7%"));
         sum += entry.amountCents;
     }
     QCOMPARE(sum, expected);
     TransactionFilter filter;
     filter.category = QStringLiteral("学习");
     QCOMPARE(sum, ExpenseSummary::calculate(rows, filter, today).monthCents);
+}
+
+void CategorySummaryTests::countsSharesAndChanges()
+{
+    const auto categories = Transaction::categories();
+    const QList<Transaction> rows{
+        {1, "A", 10, categories[0], QDate(2026, 1, 1)},
+        {2, "B", 20, categories[0], QDate(2026, 1, 31)},
+        {3, "C", 20, categories[1], QDate(2026, 1, 15)},
+        {4, "D", 50, categories[2], QDate(2026, 1, 20)},
+        {5, "E", 5, categories[0], QDate(2025, 12, 1)},
+        {6, "F", 5, categories[0], QDate(2025, 12, 31)},
+        {7, "G", 40, categories[1], QDate(2025, 12, 15)},
+        {8, "H", 50, categories[2], QDate(2025, 12, 20)},
+        {9, "I", 123, categories[3], QDate(2025, 12, 20)},
+        {10, "excluded", 999, categories[0], QDate(2025, 11, 30)},
+        {11, "excluded", 999, categories[0], QDate(2026, 2, 1)},
+        {12, "excluded", 999, categories[0], QDate(2025, 1, 1)}};
+    const auto result = CategorySummary::calculate(rows, 2026, 1);
+    const QList<qint64> amounts{30, 20, 50, 0, 0, 0};
+    const QList<qint64> counts{2, 1, 1, 0, 0, 0};
+    const QList<qint64> previous{10, 40, 50, 123, 0, 0};
+    const QList<qint64> changes{20, -20, 0, -123, 0, 0};
+    qint64 total = 0, count = 0;
+    double percentage = 0;
+    for (int row = 0; row < result.size(); ++row) {
+        QCOMPARE(result[row].category, categories[row]);
+        QCOMPARE(result[row].amountCents, amounts[row]);
+        QCOMPARE(result[row].transactionCount, counts[row]);
+        QCOMPARE(result[row].previousMonthAmountCents, previous[row]);
+        QCOMPARE(result[row].changeCents, changes[row]);
+        QCOMPARE(result[row].percentage, static_cast<double>(amounts[row]));
+        total += result[row].amountCents;
+        count += result[row].transactionCount;
+        percentage += result[row].percentage;
+    }
+    TransactionFilter monthFilter;
+    monthFilter.useDateRange = true;
+    monthFilter.startDate = QDate(2026, 1, 1);
+    monthFilter.endDate = QDate(2026, 1, 31);
+    const auto summary = ExpenseSummary::calculate(rows, monthFilter, monthFilter.startDate);
+    QCOMPARE(total, summary.monthCents);
+    QCOMPARE(count, summary.filteredCount);
+    QCOMPARE(total, 100);
+    QCOMPARE(count, 4);
+    QCOMPARE(percentage, 100.0);
+}
+
+void CategorySummaryTests::zeroMonthAndSingleCategory()
+{
+    const QList<Transaction> rows{
+        {1, "A", 1, QStringLiteral("餐饮"), QDate(2030, 5, 1)},
+        {2, "B", 2, QStringLiteral("餐饮"), QDate(2030, 5, 31)}};
+    const auto current = CategorySummary::calculate(rows, 2030, 5);
+    QCOMPARE(current[0].amountCents, 3);
+    QCOMPARE(current[0].transactionCount, 2);
+    QCOMPARE(current[0].percentage, 100.0);
+    QCOMPARE(current[0].formattedPercentage(), QStringLiteral("100.0%"));
+    QCOMPARE(current[0].previousMonthAmountCents, 0);
+    QCOMPARE(current[0].changeCents, 3);
+    // No June spending: previous month's spending must not enter count/share.
+    const auto next = CategorySummary::calculate(rows, 2030, 6);
+    for (const auto &entry : next) {
+        QCOMPARE(entry.amountCents, 0);
+        QCOMPARE(entry.transactionCount, 0);
+        QCOMPARE(entry.percentage, 0.0);
+        QCOMPARE(entry.formattedPercentage(), QStringLiteral("0.0%"));
+    }
+    QCOMPARE(next[0].previousMonthAmountCents, 3);
+    QCOMPARE(next[0].changeCents, -3);
+    for (int row = 1; row < current.size(); ++row) {
+        QCOMPARE(current[row].amountCents, 0);
+        QCOMPARE(current[row].transactionCount, 0);
+        QCOMPARE(current[row].percentage, 0.0);
+        QCOMPARE(current[row].changeCents, 0);
+    }
+}
+
+void CategorySummaryTests::arbitraryMonthAndPercentageFormatting()
+{
+    const QList<Transaction> rows{
+        {1, "A", 1, QStringLiteral("学习"), QDate(2024, 2, 29)},
+        {2, "B", 2, QStringLiteral("其他"), QDate(2024, 2, 1)},
+        {3, "C", 1, QStringLiteral("学习"), QDate(2024, 1, 31)}};
+    const auto result = CategorySummary::calculate(rows, 2024, 2);
+    QCOMPARE(result[4].formattedPercentage(), QStringLiteral("33.3%"));
+    QCOMPARE(result[5].formattedPercentage(), QStringLiteral("66.7%"));
+    QVERIFY(qAbs(result[4].percentage - 100.0 / 3) < 1e-10);
+    QCOMPARE(result[4].changeCents, 0);
+    QCOMPARE(result[5].changeCents, 2);
+    // Keep the QDate overload compatible with the existing main window.
+    const auto dated = CategorySummary::calculate(rows, QDate(2024, 2, 29));
+    for (int row = 0; row < result.size(); ++row) {
+        QCOMPARE(dated[row].amountCents, result[row].amountCents);
+        QCOMPARE(dated[row].transactionCount, result[row].transactionCount);
+        QCOMPARE(dated[row].percentage, result[row].percentage);
+        QCOMPARE(dated[row].changeCents, result[row].changeCents);
+    }
+    for (const auto &entry : CategorySummary::calculate(rows, 2024, 13)) {
+        QCOMPARE(entry.amountCents, 0);
+        QCOMPARE(entry.transactionCount, 0);
+        QCOMPARE(entry.percentage, 0.0);
+        QCOMPARE(entry.changeCents, 0);
+    }
 }
 
 void CategorySummaryTests::refreshWithCrudAndFilters()
