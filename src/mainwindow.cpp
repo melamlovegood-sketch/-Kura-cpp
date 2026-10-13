@@ -3,6 +3,7 @@
 #include "ExpenseSummary.h"
 #include "BudgetWidget.h"
 #include "StatisticsWidget.h"
+#include "WishlistWidget.h"
 
 #include <QAbstractButton>
 #include <QAbstractItemView>
@@ -152,6 +153,8 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
     m_pages->addTab(central, QStringLiteral("记账与预算"));
     m_statisticsWidget = new StatisticsWidget(m_pages);
     m_pages->addTab(m_statisticsWidget, QStringLiteral("消费统计"));
+    m_wishlistWidget = new WishlistWidget(m_database, m_pages);
+    m_pages->addTab(m_wishlistWidget, QStringLiteral("愿望清单"));
     setCentralWidget(m_pages);
     statusBar()->showMessage(QStringLiteral("消费记录会自动保存到本机。"));
     statusBar()->setToolTip(m_database.databasePath());
@@ -175,6 +178,12 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
         m_pages->setCurrentIndex(0);
     });
 
+    connect(m_wishlistWidget, &WishlistWidget::expenseRecorded, this, [this](qint64 id) {
+        if (reloadTransactions(id))
+            statusBar()->showMessage(QStringLiteral("购买已记账，预算和消费统计已更新。"), 8000);
+        else
+            statusBar()->showMessage(QStringLiteral("购买已记账，但消费列表和统计刷新失败。请检查错误并重新启动程序。"));
+    });
     m_databaseReady = m_database.initialize();
     if (!m_databaseReady) {
         showError(m_database.lastError());
@@ -188,6 +197,7 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
     }
     updateActionState();
     m_budgetWidget->setDatabaseAvailable(m_databaseReady);
+    m_wishlistWidget->setDatabaseAvailable(m_databaseReady);
 }
 
 void MainWindow::openTransactionDialog(const Transaction *existing)

@@ -124,6 +124,20 @@ bool DatabaseManager::initialize()
         m_lastError = QStringLiteral("无法初始化月度预算表：%1").arg(query.lastError().text());
         return false;
     }
+    if (!query.exec(QStringLiteral(
+            "CREATE TABLE IF NOT EXISTS wishlist ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "name TEXT NOT NULL CHECK(length(trim(name)) BETWEEN 1 AND 100), "
+            "estimated_cents INTEGER NOT NULL CHECK(typeof(estimated_cents)='integer' "
+            "AND estimated_cents BETWEEN 1 AND 9999999999), "
+            "category TEXT NOT NULL, cooling_days INTEGER NOT NULL CHECK(cooling_days BETWEEN 1 AND 30), "
+            "reason TEXT NOT NULL CHECK(length(reason)<=500), "
+            "created_ms INTEGER NOT NULL, ready_ms INTEGER NOT NULL CHECK(ready_ms>=created_ms), "
+            "status INTEGER NOT NULL DEFAULT 0 CHECK(status IN (0,1,2)), "
+            "closed_ms INTEGER, transaction_id INTEGER)"))) {
+        m_lastError = QStringLiteral("无法初始化愿望清单表：%1").arg(query.lastError().text());
+        return false;
+    }
     return true;
 }
 

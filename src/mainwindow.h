@@ -14,6 +14,7 @@ class QDateEdit;
 class BudgetWidget;
 class StatisticsWidget;
 class QTabWidget;
+class WishlistWidget;
 
 class MainWindow : public QMainWindow
 {
@@ -44,6 +45,7 @@ private:
     BudgetWidget *m_budgetWidget = nullptr;
     StatisticsWidget *m_statisticsWidget = nullptr;
     QTabWidget *m_pages = nullptr;
+    WishlistWidget *m_wishlistWidget = nullptr;
     QPushButton *m_addButton = nullptr;
     QPushButton *m_editButton = nullptr;
     QPushButton *m_deleteButton = nullptr;
