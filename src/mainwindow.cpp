@@ -4,6 +4,7 @@
 #include "BudgetWidget.h"
 #include "StatisticsWidget.h"
 #include "WishlistWidget.h"
+#include "DataManagementWidget.h"
 
 #include <QAbstractButton>
 #include <QAbstractItemView>
@@ -155,6 +156,8 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
     m_pages->addTab(m_statisticsWidget, QStringLiteral("消费统计"));
     m_wishlistWidget = new WishlistWidget(m_database, m_pages);
     m_pages->addTab(m_wishlistWidget, QStringLiteral("愿望清单"));
+    m_dataWidget = new DataManagementWidget(m_database, m_pages);
+    m_pages->addTab(m_dataWidget, QStringLiteral("数据管理"));
     setCentralWidget(m_pages);
     statusBar()->showMessage(QStringLiteral("消费记录会自动保存到本机。"));
     statusBar()->setToolTip(m_database.databasePath());
@@ -184,6 +187,18 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
         else
             statusBar()->showMessage(QStringLiteral("购买已记账，但消费列表和统计刷新失败。请检查错误并重新启动程序。"));
     });
+    connect(m_dataWidget, &DataManagementWidget::databaseRestored, this, [this] {
+        m_filter = {};
+        m_categoryFilter->setCurrentIndex(0);
+        m_useDateRange->setChecked(false);
+        m_budgetWidget->setDatabaseAvailable(false);
+        m_budgetWidget->setDatabaseAvailable(true);
+        m_wishlistWidget->refresh();
+        if (reloadTransactions())
+            statusBar()->showMessage(QStringLiteral("备份已恢复，所有页面已刷新。"), 8000);
+        else
+            statusBar()->showMessage(QStringLiteral("数据已恢复，但消费页面刷新失败，请重新启动程序。"));
+    });
     m_databaseReady = m_database.initialize();
     if (!m_databaseReady) {
         showError(m_database.lastError());
@@ -198,6 +213,7 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
     updateActionState();
     m_budgetWidget->setDatabaseAvailable(m_databaseReady);
     m_wishlistWidget->setDatabaseAvailable(m_databaseReady);
+    m_dataWidget->setDatabaseAvailable(m_databaseReady);
 }
 
 void MainWindow::openTransactionDialog(const Transaction *existing)
@@ -348,6 +364,7 @@ bool MainWindow::reloadTransactions(qint64 selectedId)
     m_filteredSummaryLabel->setText(QStringLiteral("当前结果：%1 笔 · %2")
         .arg(summary.filteredCount).arg(Transaction::formatAmount(summary.filteredCents)));
     m_filterDescriptionLabel->setText(m_filter.description());
+    m_dataWidget->setAppliedFilter(m_filter);
     m_emptyHint->setText(loaded.isEmpty() ? QStringLiteral("暂无消费记录，点击“记一笔”添加。")
         : QStringLiteral("没有符合条件的消费记录，可以调整筛选条件或点击“重置”。"));
     m_emptyHint->setVisible(m_transactions.isEmpty());

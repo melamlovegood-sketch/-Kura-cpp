@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(KuraCpp VERSION 0.6.0 LANGUAGES CXX)
+project(KuraCpp VERSION 0.7.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -22,6 +22,8 @@ add_library(kura_core STATIC
     src/ExpenseStatistics.cpp src/ExpenseStatistics.h
     src/WishItem.cpp src/WishItem.h
     src/WishlistRepository.cpp src/WishlistRepository.h
+    src/CsvExporter.cpp src/CsvExporter.h
+    src/DatabaseBackupService.cpp src/DatabaseBackupService.h
 )
 target_include_directories(kura_core PUBLIC src)
 target_link_libraries(kura_core PUBLIC Qt6::Sql)
@@ -34,6 +36,7 @@ add_library(kura_widgets STATIC
     src/StatisticsWidget.cpp src/StatisticsWidget.h
     src/WishDialog.cpp src/WishDialog.h
     src/WishlistWidget.cpp src/WishlistWidget.h
+    src/DataManagementWidget.cpp src/DataManagementWidget.h
 )
 target_link_libraries(kura_widgets PUBLIC kura_core Qt6::Widgets)
 add_executable(KuraCpp WIN32 src/main.cpp)
@@ -68,4 +71,9 @@ if(BUILD_TESTING)
     target_link_libraries(wishlist_tests PRIVATE kura_widgets Qt6::Test)
     add_test(NAME wishlist_tests COMMAND wishlist_tests)
     set_tests_properties(wishlist_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+    add_executable(data_management_tests tests/data_management_tests.cpp)
+    target_link_libraries(data_management_tests PRIVATE kura_widgets Qt6::Test)
+    add_test(NAME data_management_tests COMMAND data_management_tests)
+    set_tests_properties(data_management_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
