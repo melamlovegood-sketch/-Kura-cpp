@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 #include "AddTransactionDialog.h"
 #include "ExpenseSummary.h"
+#include "CategorySummary.h"
 #include "BudgetWidget.h"
 #include "StatisticsWidget.h"
 #include "WishlistWidget.h"
@@ -12,6 +13,7 @@
 #include <QComboBox>
 #include <QDateEdit>
 #include <QFont>
+#include <QGroupBox>
 #include <QHeaderView>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -145,7 +147,34 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
     m_transactionTable->verticalHeader()->hide();
     m_transactionTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     m_transactionTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
-    layout->addWidget(m_transactionTable, 1);
+    auto *records = new QHBoxLayout;
+    records->addWidget(m_transactionTable, 3);
+    auto *categoryBox = new QGroupBox(QStringLiteral("本月分类支出"), central);
+    auto *categoryLayout = new QVBoxLayout(categoryBox);
+    m_categorySummaryTable = new QTableWidget(Transaction::categories().size(), 2, categoryBox);
+    m_categorySummaryTable->setObjectName(QStringLiteral("categorySummaryTable"));
+    m_categorySummaryTable->setAccessibleName(QStringLiteral("本月分类支出"));
+    m_categorySummaryTable->setHorizontalHeaderLabels({QStringLiteral("分类"), QStringLiteral("金额")});
+    m_categorySummaryTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_categorySummaryTable->setSelectionMode(QAbstractItemView::NoSelection);
+    m_categorySummaryTable->setAlternatingRowColors(true);
+    m_categorySummaryTable->verticalHeader()->hide();
+    m_categorySummaryTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    m_categorySummaryTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+    m_categorySummaryTable->setMinimumWidth(200);
+    const auto categories = Transaction::categories();
+    for (int row = 0; row < categories.size(); ++row) {
+        m_categorySummaryTable->setItem(row, 0, new QTableWidgetItem(categories[row]));
+        auto *amount = new QTableWidgetItem(QStringLiteral("—"));
+        amount->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        m_categorySummaryTable->setItem(row, 1, amount);
+    }
+    categoryLayout->addWidget(m_categorySummaryTable);
+    auto *categoryHint = new QLabel(QStringLiteral("按消费日期统计，不受列表筛选影响。"), categoryBox);
+    categoryHint->setWordWrap(true);
+    categoryLayout->addWidget(categoryHint);
+    records->addWidget(categoryBox, 1);
+    layout->addLayout(records, 1);
 
     m_emptyHint = new QLabel(QStringLiteral("暂无消费记录，点击“记一笔”添加。"), central);
     m_emptyHint->setObjectName(QStringLiteral("emptyHint"));
@@ -320,7 +349,14 @@ bool MainWindow::reloadTransactions(qint64 selectedId)
         m_statisticsWidget->showLoadError(m_repository.lastError());
         return false;
     }
-    const auto summary = ExpenseSummary::calculate(loaded, m_filter);
+    const auto today = QDate::currentDate();
+    const auto summary = ExpenseSummary::calculate(loaded, m_filter, today);
+    const auto categories = CategorySummary::calculate(loaded, today);
+    for (int row = 0; row < categories.size(); ++row) {
+        auto *amount = m_categorySummaryTable->item(row, 1);
+        amount->setText(Transaction::formatAmount(categories[row].amountCents));
+        amount->setData(Qt::UserRole, categories[row].amountCents);
+    }
     m_statisticsWidget->setTransactions(loaded);
     m_transactions.clear();
     for (const auto &transaction : loaded) {
