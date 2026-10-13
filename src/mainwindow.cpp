@@ -2,6 +2,7 @@
 #include "AddTransactionDialog.h"
 #include "ExpenseSummary.h"
 #include "BudgetWidget.h"
+#include "StatisticsWidget.h"
 
 #include <QAbstractButton>
 #include <QAbstractItemView>
@@ -16,6 +17,7 @@
 #include <QPushButton>
 #include <QStatusBar>
 #include <QTableWidget>
+#include <QTabWidget>
 #include <QVBoxLayout>
 #include <QWidget>
 
@@ -31,7 +33,9 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
     resize(920, 740);
     setMinimumSize(800, 600);
 
-    auto *central = new QWidget(this);
+    m_pages = new QTabWidget(this);
+    m_pages->setObjectName(QStringLiteral("mainPages"));
+    auto *central = new QWidget(m_pages);
     auto *layout = new QVBoxLayout(central);
     layout->setContentsMargins(24, 24, 24, 24);
     layout->setSpacing(16);
@@ -86,6 +90,7 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
     const QDate today = QDate::currentDate();
     m_startDate = new QDateEdit(QDate(today.year(), today.month(), 1), central);
     m_startDate->setObjectName(QStringLiteral("startDateFilter"));
+    m_startDate->setDateRange(QDate(1, 1, 1), QDate(9999, 12, 31));
     m_startDate->setDisplayFormat(QStringLiteral("yyyy-MM-dd"));
     m_startDate->setCalendarPopup(true);
     m_startDate->setEnabled(false);
@@ -93,6 +98,7 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
     filters->addWidget(new QLabel(QStringLiteral("至"), central));
     m_endDate = new QDateEdit(today, central);
     m_endDate->setObjectName(QStringLiteral("endDateFilter"));
+    m_endDate->setDateRange(QDate(1, 1, 1), QDate(9999, 12, 31));
     m_endDate->setDisplayFormat(QStringLiteral("yyyy-MM-dd"));
     m_endDate->setCalendarPopup(true);
     m_endDate->setEnabled(false);
@@ -142,7 +148,10 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
     m_emptyHint->setObjectName(QStringLiteral("emptyHint"));
     m_emptyHint->setWordWrap(true);
     layout->addWidget(m_emptyHint);
-    setCentralWidget(central);
+    m_pages->addTab(central, QStringLiteral("记账与预算"));
+    m_statisticsWidget = new StatisticsWidget(m_pages);
+    m_pages->addTab(m_statisticsWidget, QStringLiteral("消费统计"));
+    setCentralWidget(m_pages);
     statusBar()->showMessage(QStringLiteral("消费记录会自动保存到本机。"));
     statusBar()->setToolTip(m_database.databasePath());
 
@@ -155,10 +164,20 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
     connect(m_applyFilterButton, &QPushButton::clicked, this, &MainWindow::applyFilters);
     connect(m_resetFilterButton, &QPushButton::clicked, this, &MainWindow::resetFilters);
     connect(m_useDateRange, &QCheckBox::toggled, this, &MainWindow::updateActionState);
+    connect(m_statisticsWidget, &StatisticsWidget::monthActivated, this, [this](const QDate &month) {
+        m_categoryFilter->setCurrentIndex(0);
+        m_useDateRange->setChecked(true);
+        m_startDate->setDate(month);
+        m_endDate->setDate(QDate(month.year(), month.month(), month.daysInMonth()));
+        applyFilters();
+        m_budgetWidget->setMonth(month);
+        m_pages->setCurrentIndex(0);
+    });
 
     m_databaseReady = m_database.initialize();
     if (!m_databaseReady) {
         showError(m_database.lastError());
+        m_statisticsWidget->showLoadError(m_database.lastError());
         m_emptyHint->setText(QStringLiteral("数据库不可用，请检查上述错误后重新启动程序。"));
         statusBar()->showMessage(QStringLiteral("数据保存暂不可用。"));
     } else if (!reloadTransactions()) {
@@ -271,9 +290,11 @@ bool MainWindow::reloadTransactions(qint64 selectedId)
     QList<Transaction> loaded;
     if (!m_repository.findAll(loaded)) {
         showError(m_repository.lastError());
+        m_statisticsWidget->showLoadError(m_repository.lastError());
         return false;
     }
     const auto summary = ExpenseSummary::calculate(loaded, m_filter);
+    m_statisticsWidget->setTransactions(loaded);
     m_transactions.clear();
     for (const auto &transaction : loaded) {
         if (m_filter.matches(transaction))

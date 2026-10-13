@@ -15,6 +15,7 @@ public:
     explicit BudgetWidget(DatabaseManager &database, QWidget *parent = nullptr);
     void setDatabaseAvailable(bool available);
     bool refresh();
+    void setMonth(const QDate &month);
 
 private:
     bool loadSelectedMonth(bool resetAmount);

@@ -95,6 +95,12 @@ bool BudgetWidget::refresh()
     return loadSelectedMonth(false);
 }
 
+void BudgetWidget::setMonth(const QDate &month)
+{
+    if (MonthlyBudget(month, 0).validationError().isEmpty())
+        m_monthEdit->setDate(MonthlyBudget::firstDay(month));
+}
+
 bool BudgetWidget::loadSelectedMonth(bool resetAmount)
 {
     if (!m_databaseAvailable)

@@ -48,6 +48,7 @@ AddTransactionDialog::AddTransactionDialog(QWidget *parent)
 
     m_dateEdit = new QDateEdit(QDate::currentDate(), this);
     m_dateEdit->setObjectName(QStringLiteral("dateEdit"));
+    m_dateEdit->setDateRange(QDate(1, 1, 1), QDate(9999, 12, 31));
     m_dateEdit->setDisplayFormat(QStringLiteral("yyyy-MM-dd"));
     m_dateEdit->setCalendarPopup(true);
     form->addRow(QStringLiteral("日期"), m_dateEdit);
