@@ -1,5 +1,6 @@
 #include "StatisticsWidget.h"
 #include "MonthlyTrendChart.h"
+#include "CategorySummary.h"
 
 #include <QAbstractItemView>
 #include <QHeaderView>
@@ -10,6 +11,8 @@
 #include <QSpinBox>
 #include <QTableWidget>
 #include <QVBoxLayout>
+#include <QComboBox>
+#include <QTabWidget>
 
 StatisticsWidget::StatisticsWidget(QWidget *parent) : QWidget(parent)
 {
@@ -58,6 +61,10 @@ StatisticsWidget::StatisticsWidget(QWidget *parent) : QWidget(parent)
     layout->addWidget(m_chart, 1);
     layout->addWidget(new QLabel(QStringLiteral("悬停查看金额和笔数，双击图表中的月份查看消费记录。"), this));
 
+    auto *details = new QTabWidget(this);
+    details->setObjectName(QStringLiteral("statisticsDetailsTabs"));
+    auto *monthlyPage = new QWidget(details);
+    auto *monthlyLayout = new QVBoxLayout(monthlyPage);
     auto *tableHeading = new QHBoxLayout;
     tableHeading->addWidget(new QLabel(QStringLiteral("月度明细"), this));
     tableHeading->addStretch();
@@ -65,7 +72,7 @@ StatisticsWidget::StatisticsWidget(QWidget *parent) : QWidget(parent)
     m_viewMonthButton->setObjectName(QStringLiteral("viewStatisticsMonthButton"));
     m_viewMonthButton->setEnabled(false);
     tableHeading->addWidget(m_viewMonthButton);
-    layout->addLayout(tableHeading);
+    monthlyLayout->addLayout(tableHeading);
     m_monthTable = new QTableWidget(0, 3, this);
     m_monthTable->setObjectName(QStringLiteral("monthlyStatisticsTable"));
     m_monthTable->setHorizontalHeaderLabels({QStringLiteral("月份"), QStringLiteral("消费笔数"), QStringLiteral("支出金额")});
@@ -75,7 +82,39 @@ StatisticsWidget::StatisticsWidget(QWidget *parent) : QWidget(parent)
     m_monthTable->setAlternatingRowColors(true);
     m_monthTable->verticalHeader()->hide();
     m_monthTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-    layout->addWidget(m_monthTable, 1);
+    monthlyLayout->addWidget(m_monthTable, 1);
+    details->addTab(monthlyPage,QStringLiteral("月度明细"));
+    auto *categoryPage = new QWidget(details);
+    auto *categoryLayout = new QVBoxLayout(categoryPage);
+    auto *categoryHeading = new QHBoxLayout;
+    categoryHeading->addWidget(new QLabel(QStringLiteral("统计月份"),categoryPage));
+    m_categoryMonth = new QComboBox(categoryPage);
+    m_categoryMonth->setObjectName(QStringLiteral("categoryReviewMonthComboBox"));
+    for (int month=1;month<=12;++month) m_categoryMonth->addItem(QStringLiteral("%1月").arg(month));
+    m_categoryMonth->setCurrentIndex(QDate::currentDate().month()-1);
+    m_categoryMonth->setEnabled(false);
+    categoryHeading->addWidget(m_categoryMonth);
+    categoryHeading->addStretch();
+    m_categoryTotal = new QLabel(QStringLiteral("分类合计：—"),categoryPage);
+    m_categoryTotal->setObjectName(QStringLiteral("categoryReviewTotalLabel"));
+    categoryHeading->addWidget(m_categoryTotal);
+    categoryLayout->addLayout(categoryHeading);
+    m_categoryTable = new QTableWidget(0,6,categoryPage);
+    m_categoryTable->setObjectName(QStringLiteral("categoryReviewTable"));
+    m_categoryTable->setHorizontalHeaderLabels({QStringLiteral("分类"),QStringLiteral("金额"),QStringLiteral("笔数"),QStringLiteral("占比"),QStringLiteral("上月金额"),QStringLiteral("变化")});
+    m_categoryTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_categoryTable->setSelectionMode(QAbstractItemView::NoSelection);
+    m_categoryTable->setAlternatingRowColors(true);
+    m_categoryTable->verticalHeader()->hide();
+    m_categoryTable->verticalHeader()->setDefaultSectionSize(34);
+    m_categoryTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    m_categoryTable->setMinimumHeight(240);
+    categoryLayout->addWidget(m_categoryTable);
+    auto *categoryHint = new QLabel(QStringLiteral("变化 = 所选月 − 上月；正数为增加，负数为减少。占比四舍五入后合计可能略有差异。"),categoryPage);
+    categoryHint->setWordWrap(true); categoryLayout->addWidget(categoryHint);
+    details->addTab(categoryPage,QStringLiteral("分类复盘"));
+    layout->addWidget(details,1);
+    connect(m_categoryMonth,&QComboBox::currentIndexChanged,this,[this] { if (m_hasSnapshot) renderCategories(); });
 
     connect(m_yearEdit, &QSpinBox::valueChanged, this, [this](int year) {
         if (!m_hasSnapshot)
@@ -106,6 +145,7 @@ bool StatisticsWidget::setTransactions(const QList<Transaction> &records)
     m_loadError.clear();
     m_hasSnapshot = true;
     m_yearEdit->setEnabled(true);
+    m_categoryMonth->setEnabled(true);
     render(statistics);
     return true;
 }
@@ -125,6 +165,7 @@ void StatisticsWidget::render(const YearlyExpenseStatistics &statistics)
             .arg(statistics.months[peak].month.toString(QStringLiteral("yyyy-MM")))
             .arg(Transaction::formatAmount(statistics.months[peak].totalCents)));
     m_chart->setStatistics(statistics);
+    renderCategories();
     m_monthTable->setRowCount(0);
     for (const auto &month : statistics.months) {
         const int row = m_monthTable->rowCount();
@@ -144,6 +185,22 @@ void StatisticsWidget::render(const YearlyExpenseStatistics &statistics)
     else
         showLoadError(m_loadError);
     updateSelection();
+}
+
+void StatisticsWidget::renderCategories()
+{
+    const QDate month(m_yearEdit->value(),m_categoryMonth->currentIndex()+1,1);
+    const auto categories = CategorySummary::calculate(m_records,month);
+    qint64 total=0, count=0;
+    m_categoryTable->setRowCount(categories.size());
+    for (int row=0;row<categories.size();++row) {
+        const auto &entry = categories[row];
+        total += entry.amountCents; count += entry.transactionCount;
+        const QString change = (entry.changeCents>0 ? QStringLiteral("+") : QString()) + Transaction::formatAmount(entry.changeCents);
+        const QStringList cells = {entry.category,Transaction::formatAmount(entry.amountCents),QString::number(entry.transactionCount),entry.formattedPercentage(),Transaction::formatAmount(entry.previousMonthAmountCents),change};
+        for (int column=0;column<cells.size();++column) m_categoryTable->setItem(row,column,new QTableWidgetItem(cells[column]));
+    }
+    m_categoryTotal->setText(QStringLiteral("%1 · %2 · %3 笔").arg(month.toString(QStringLiteral("yyyy-MM")),Transaction::formatAmount(total)).arg(count));
 }
 
 void StatisticsWidget::updateSelection()

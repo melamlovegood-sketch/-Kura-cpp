@@ -8,6 +8,7 @@ class QSpinBox;
 class QTableWidget;
 class QPushButton;
 class MonthlyTrendChart;
+class QComboBox;
 
 class StatisticsWidget : public QWidget
 {
@@ -24,6 +25,7 @@ private:
     void render(const YearlyExpenseStatistics &statistics);
     void updateSelection();
     void activateSelectedMonth();
+    void renderCategories();
     QList<Transaction> m_records;
     bool m_hasSnapshot = false;
     QString m_loadError;
@@ -35,4 +37,7 @@ private:
     QTableWidget *m_monthTable = nullptr;
     QPushButton *m_viewMonthButton = nullptr;
     MonthlyTrendChart *m_chart = nullptr;
+    QComboBox *m_categoryMonth = nullptr;
+    QTableWidget *m_categoryTable = nullptr;
+    QLabel *m_categoryTotal = nullptr;
 };

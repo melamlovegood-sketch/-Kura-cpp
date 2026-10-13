@@ -113,6 +113,19 @@ void ReleaseTests::responsivePagesAndPreviews()
         pages->setCurrentIndex(page); settle();
         if (!preview.isEmpty()) QVERIFY(window.grab().save(preview+QStringLiteral("/")+names[page]+QStringLiteral(".png")));
     }
+    pages->setCurrentIndex(1);
+    auto *details=window.findChild<QTabWidget *>(QStringLiteral("statisticsDetailsTabs")); details->setCurrentIndex(1); settle();
+    auto *review=window.findChild<QTableWidget *>(QStringLiteral("categoryReviewTable"));
+    QCOMPARE(review->rowCount(),6);
+    QCOMPARE(review->item(4,1)->text(),QStringLiteral("¥127.00"));
+    QCOMPARE(review->item(4,2)->text(),QStringLiteral("2"));
+    QCOMPARE(review->item(4,3)->text(),QStringLiteral("53.6%"));
+    QCOMPARE(review->item(4,5)->text(),QStringLiteral("+¥127.00"));
+    if (!preview.isEmpty()) QVERIFY(window.grab().save(preview+QStringLiteral("/release-category-review.png")));
+    auto *reviewMonth=window.findChild<QComboBox *>(QStringLiteral("categoryReviewMonthComboBox"));
+    reviewMonth->setCurrentIndex(0); // Selected month can differ from the current month.
+    if (QDate::currentDate().month()>1) QCOMPARE(review->item(2,1)->text(),QStringLiteral("¥92.00"));
+    reviewMonth->setCurrentIndex(QDate::currentDate().month()-1);
     pages->setCurrentIndex(0); window.resize(800,600); settle();
     QCOMPARE(window.size(),QSize(800,600));
     auto *scroll=window.findChild<QScrollArea *>(QStringLiteral("recordsScrollArea"));
@@ -126,6 +139,7 @@ void ReleaseTests::responsivePagesAndPreviews()
     QCOMPARE(window.findChild<QTableWidget *>(QStringLiteral("transactionTable"))->rowCount(),2);
     total=0; for(int row=0;row<6;++row) total+=categories->item(row,1)->data(Qt::UserRole).toLongLong();
     QCOMPARE(total,23700);
+    QCOMPARE(review->item(4,1)->text(),QStringLiteral("¥127.00"));
 }
 QTEST_MAIN(ReleaseTests)
 #include "release_tests.moc"

@@ -204,7 +204,10 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
     recordScroll->setWidget(central);
     m_pages->addTab(recordScroll, QStringLiteral("记账与预算"));
     m_statisticsWidget = new StatisticsWidget(m_pages);
-    m_pages->addTab(m_statisticsWidget, QStringLiteral("消费统计"));
+    auto *statisticsScroll = new QScrollArea(m_pages);
+    statisticsScroll->setWidgetResizable(true);
+    statisticsScroll->setWidget(m_statisticsWidget);
+    m_pages->addTab(statisticsScroll, QStringLiteral("消费统计"));
     m_wishlistWidget = new WishlistWidget(m_database, m_pages);
     m_pages->addTab(m_wishlistWidget, QStringLiteral("愿望清单"));
     m_dataWidget = new DataManagementWidget(m_database, m_pages);

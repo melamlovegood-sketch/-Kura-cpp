@@ -12,7 +12,7 @@
 | FR04 | 默认分类选择 | 完成六个固定分类 | Transaction、summary_tests |
 | FR05 | 本月支出 | 完成，整数分、自然月 | summary_tests、category_summary_tests |
 | FR06 | 月度预算及已用、剩余 | 完成，零额度、未设置和超支分别处理 | budget_tests |
-| FR07 | 分类支出与月度趋势 | 完成分类金额和年度月度趋势 | B 的 category_summary_tests、statistics_tests |
+| FR07 | 分类支出与月度趋势 | 完成分类金额、笔数、占比、上月比较和年度月度趋势 | B 的 category_summary_tests、statistics_tests、release_tests |
 | FR08 | 72 小时冷静期 | 默认 3 天等于 72 小时，允许选择 1 至 30 天 | wishlist_tests |
 | FR09 | 愿望名称、预计价格、优先级、状态 | 完成高、中、低优先级与状态历史 | wishlist_tests、release_tests |
 | 可选扩展 | 数据导出与图表优化 | CSV、完整备份恢复、趋势图、统一界面 | data_management_tests、release_tests |
@@ -21,7 +21,7 @@
 
 分类用六个固定字符串，不使用独立 categories 表；“医疗”在初稿中为建议分类，本版可归入其他。消费日期和可选时间分列保存，旧记录未知时间不会被补造。日期筛选包含起止两天，与按天输入的预期一致。职责分为界面、数据模型及校验、筛选汇总、Repository，具体类名与初稿的 Service 名称不同。以上差异应在教师确认和报告中说明。
 
-尚未实现分类笔数、占比和上月对比，也没有自定义分类。云同步、登录、OCR、AI 聊天与网页端不在这版课程范围内。原版 Web 界面复刻属于另一个任务，本版仅统一 Qt 界面与布局。
+尚未实现自定义分类。云同步、登录、OCR、AI 聊天与网页端不在这版课程范围内。原版 Web 界面复刻属于另一个任务，本版仅统一 Qt 界面与布局。
 
 ## 人工交叉验收表
 
