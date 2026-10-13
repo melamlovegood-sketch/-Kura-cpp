@@ -1,19 +1,40 @@
 cmake_minimum_required(VERSION 3.16)
-project(KuraCpp VERSION 0.1.0 LANGUAGES CXX)
+project(KuraCpp VERSION 0.2.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_AUTOMOC ON)
-
-find_package(Qt6 REQUIRED COMPONENTS Widgets)
-
-file(GLOB_RECURSE KURA_SOURCES CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.h"
-)
-add_executable(KuraCpp WIN32 ${KURA_SOURCES})
-target_link_libraries(KuraCpp PRIVATE Qt6::Widgets)
 if(MSVC)
-    target_compile_options(KuraCpp PRIVATE /utf-8)
+    add_compile_options(/utf-8)
+endif()
+
+find_package(Qt6 REQUIRED COMPONENTS Widgets Sql)
+
+add_library(kura_core STATIC
+    src/Transaction.cpp src/Transaction.h
+    src/DatabaseManager.cpp src/DatabaseManager.h
+    src/TransactionRepository.cpp src/TransactionRepository.h
+)
+target_include_directories(kura_core PUBLIC src)
+target_link_libraries(kura_core PUBLIC Qt6::Sql)
+
+add_library(kura_widgets STATIC
+    src/mainwindow.cpp src/mainwindow.h
+    src/AddTransactionDialog.cpp src/AddTransactionDialog.h
+)
+target_link_libraries(kura_widgets PUBLIC kura_core Qt6::Widgets)
+add_executable(KuraCpp WIN32 src/main.cpp)
+target_link_libraries(KuraCpp PRIVATE kura_widgets)
+include(CTest)
+if(BUILD_TESTING)
+    find_package(Qt6 REQUIRED COMPONENTS Test)
+    add_executable(repository_tests tests/repository_tests.cpp)
+    target_link_libraries(repository_tests PRIVATE kura_core Qt6::Test)
+    add_test(NAME repository_tests COMMAND repository_tests)
+
+    add_executable(window_tests tests/window_tests.cpp)
+    target_link_libraries(window_tests PRIVATE kura_widgets Qt6::Test)
+    add_test(NAME window_tests COMMAND window_tests)
+    set_tests_properties(window_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()

@@ -43,10 +43,7 @@ AddTransactionDialog::AddTransactionDialog(QWidget *parent)
 
     m_categoryComboBox = new QComboBox(this);
     m_categoryComboBox->setObjectName(QStringLiteral("categoryComboBox"));
-    m_categoryComboBox->addItems({
-        QStringLiteral("餐饮"), QStringLiteral("交通"), QStringLiteral("购物"),
-        QStringLiteral("娱乐"), QStringLiteral("学习"), QStringLiteral("其他")
-    });
+    m_categoryComboBox->addItems(Transaction::categories());
     form->addRow(QStringLiteral("分类"), m_categoryComboBox);
 
     m_dateEdit = new QDateEdit(QDate::currentDate(), this);
@@ -58,6 +55,7 @@ AddTransactionDialog::AddTransactionDialog(QWidget *parent)
 
     m_errorLabel = new QLabel(this);
     m_errorLabel->setObjectName(QStringLiteral("validationErrorLabel"));
+    m_errorLabel->setTextFormat(Qt::PlainText);
     m_errorLabel->setWordWrap(true);
     m_errorLabel->setStyleSheet(QStringLiteral("color: #b42318;"));
     m_errorLabel->setMinimumHeight(m_errorLabel->fontMetrics().height());
@@ -65,9 +63,10 @@ AddTransactionDialog::AddTransactionDialog(QWidget *parent)
 
     auto *buttons = new QDialogButtonBox(
         QDialogButtonBox::Save | QDialogButtonBox::Cancel, this);
-    buttons->button(QDialogButtonBox::Save)->setText(QStringLiteral("保存"));
-    buttons->button(QDialogButtonBox::Save)->setObjectName(QStringLiteral("saveButton"));
-    buttons->button(QDialogButtonBox::Save)->setDefault(true);
+    m_saveButton = buttons->button(QDialogButtonBox::Save);
+    m_saveButton->setText(QStringLiteral("保存"));
+    m_saveButton->setObjectName(QStringLiteral("saveButton"));
+    m_saveButton->setDefault(true);
     buttons->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("取消"));
     buttons->button(QDialogButtonBox::Cancel)->setObjectName(QStringLiteral("cancelButton"));
     connect(buttons, &QDialogButtonBox::accepted, this, &AddTransactionDialog::accept);
@@ -99,6 +98,8 @@ QDate AddTransactionDialog::date() const
 
 void AddTransactionDialog::accept()
 {
+    if (!m_saveButton->isEnabled())
+        return;
     if (description().isEmpty()) {
         m_errorLabel->setText(QStringLiteral("请填写消费名称。"));
         m_descriptionEdit->setFocus();
@@ -127,6 +128,28 @@ void AddTransactionDialog::accept()
     }
 
     m_dateEdit->interpretText();
+    const QString error = transaction().validationError();
+    if (!error.isEmpty()) {
+        showSaveError(error);
+        return;
+    }
     m_errorLabel->clear();
+    m_saveButton->setEnabled(false);
+    emit saveRequested();
+}
+
+Transaction AddTransactionDialog::transaction() const
+{
+    return Transaction(0, description(), qRound64(amount() * 100.0), category(), date());
+}
+
+void AddTransactionDialog::showSaveError(const QString &message)
+{
+    m_errorLabel->setText(message);
+    m_saveButton->setEnabled(true);
+}
+
+void AddTransactionDialog::completeSave()
+{
     QDialog::accept();
 }

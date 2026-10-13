@@ -3,3 +3,7 @@
 /.idea/
 /.vscode/
 *.user
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
