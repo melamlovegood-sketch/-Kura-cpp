@@ -54,6 +54,7 @@ private:
     QDateEdit *m_startDate = nullptr;
     QDateEdit *m_endDate = nullptr;
     QTableWidget *m_transactionTable = nullptr;
+    QTableWidget *m_categorySummaryTable = nullptr;
     QLabel *m_emptyHint = nullptr;
     QLabel *m_errorLabel = nullptr;
     QLabel *m_totalLabel = nullptr;

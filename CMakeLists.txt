@@ -17,6 +17,7 @@ add_library(kura_core STATIC
     src/TransactionRepository.cpp src/TransactionRepository.h
     src/TransactionFilter.cpp src/TransactionFilter.h
     src/ExpenseSummary.cpp src/ExpenseSummary.h
+    src/CategorySummary.cpp src/CategorySummary.h
     src/MonthlyBudget.cpp src/MonthlyBudget.h
     src/BudgetRepository.cpp src/BudgetRepository.h
     src/ExpenseStatistics.cpp src/ExpenseStatistics.h
@@ -37,6 +38,10 @@ target_link_libraries(KuraCpp PRIVATE kura_widgets)
 include(CTest)
 if(BUILD_TESTING)
     find_package(Qt6 REQUIRED COMPONENTS Test)
+    add_executable(category_summary_tests tests/category_summary_tests.cpp)
+    target_link_libraries(category_summary_tests PRIVATE kura_widgets Qt6::Test)
+    add_test(NAME category_summary_tests COMMAND category_summary_tests)
+    set_tests_properties(category_summary_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_executable(repository_tests tests/repository_tests.cpp)
     target_link_libraries(repository_tests PRIVATE kura_core Qt6::Test)
     add_test(NAME repository_tests COMMAND repository_tests)
