@@ -73,6 +73,14 @@ bool DatabaseManager::initialize()
         m_lastError = QStringLiteral("无法初始化消费记录表：%1").arg(query.lastError().text());
         return false;
     }
+    if (!query.exec(QStringLiteral(
+            "CREATE TABLE IF NOT EXISTS monthly_budgets ("
+            "month TEXT PRIMARY KEY NOT NULL CHECK(length(month) = 7), "
+            "limit_cents INTEGER NOT NULL CHECK(typeof(limit_cents) = 'integer' "
+            "AND limit_cents BETWEEN 0 AND 9999999999))"))) {
+        m_lastError = QStringLiteral("无法初始化月度预算表：%1").arg(query.lastError().text());
+        return false;
+    }
     return true;
 }
 

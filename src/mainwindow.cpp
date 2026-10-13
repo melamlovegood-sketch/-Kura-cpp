@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 #include "AddTransactionDialog.h"
 #include "ExpenseSummary.h"
+#include "BudgetWidget.h"
 
 #include <QAbstractButton>
 #include <QAbstractItemView>
@@ -27,8 +28,8 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
     : QMainWindow(parent), m_database(databasePath), m_repository(m_database)
 {
     setWindowTitle(QStringLiteral("Kura C++"));
-    resize(920, 600);
-    setMinimumSize(800, 460);
+    resize(920, 740);
+    setMinimumSize(800, 600);
 
     auto *central = new QWidget(this);
     auto *layout = new QVBoxLayout(central);
@@ -55,6 +56,9 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
     heading->addWidget(m_editButton);
     heading->addWidget(m_deleteButton);
     layout->addLayout(heading);
+
+    m_budgetWidget = new BudgetWidget(m_database, central);
+    layout->addWidget(m_budgetWidget);
 
     auto *totals = new QHBoxLayout;
     m_totalLabel = new QLabel(QStringLiteral("全部支出：—"), central);
@@ -163,6 +167,7 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
         statusBar()->showMessage(QStringLiteral("消费记录加载失败。"));
     }
     updateActionState();
+    m_budgetWidget->setDatabaseAvailable(m_databaseReady);
 }
 
 void MainWindow::openTransactionDialog(const Transaction *existing)
@@ -304,6 +309,7 @@ bool MainWindow::reloadTransactions(qint64 selectedId)
         : QStringLiteral("没有符合条件的消费记录，可以调整筛选条件或点击“重置”。"));
     m_emptyHint->setVisible(m_transactions.isEmpty());
     m_errorLabel->hide();
+    m_budgetWidget->refresh();
     updateActionState();
     return true;
 }

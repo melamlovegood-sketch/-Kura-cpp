@@ -11,6 +11,7 @@ class QLabel;
 class QComboBox;
 class QCheckBox;
 class QDateEdit;
+class BudgetWidget;
 
 class MainWindow : public QMainWindow
 {
@@ -38,6 +39,7 @@ private:
     QList<Transaction> m_transactions;
     TransactionFilter m_filter;
     bool m_databaseReady = false;
+    BudgetWidget *m_budgetWidget = nullptr;
     QPushButton *m_addButton = nullptr;
     QPushButton *m_editButton = nullptr;
     QPushButton *m_deleteButton = nullptr;
