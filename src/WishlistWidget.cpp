@@ -68,10 +68,10 @@ WishlistWidget::WishlistWidget(DatabaseManager &database, QWidget *parent)
     m_error->setStyleSheet(QStringLiteral("color: #b42318;"));
     m_error->hide();
     layout->addWidget(m_error);
-    m_table = new QTableWidget(0, 6, this);
+    m_table = new QTableWidget(0, 7, this);
     m_table->setObjectName(QStringLiteral("wishlistTable"));
     m_table->setHorizontalHeaderLabels({QStringLiteral("名称"), QStringLiteral("预计价格"), QStringLiteral("分类"),
-        QStringLiteral("状态与剩余时间"), QStringLiteral("冷静期截止"), QStringLiteral("购买理由")});
+        QStringLiteral("状态与剩余时间"), QStringLiteral("冷静期截止"), QStringLiteral("购买理由"), QStringLiteral("优先级")});
     m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_table->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -165,7 +165,7 @@ void WishlistWidget::render(const QDateTime &now)
     for (int row = 0; row < visible.size(); ++row) {
         const auto &item = *visible[row];
         const QStringList values = {item.name, Transaction::formatAmount(item.estimatedCents), item.category,
-            item.statusText(now), item.readyAt.toLocalTime().toString(QStringLiteral("yyyy-MM-dd HH:mm")), item.reason};
+            item.statusText(now), item.readyAt.toLocalTime().toString(QStringLiteral("yyyy-MM-dd HH:mm")), item.reason, item.priorityText()};
         for (int column = 0; column < values.size(); ++column) {
             auto *cell = m_table->item(row, column);
             if (!cell) {

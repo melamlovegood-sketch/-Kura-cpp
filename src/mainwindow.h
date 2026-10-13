@@ -16,6 +16,9 @@ class StatisticsWidget;
 class QTabWidget;
 class WishlistWidget;
 class DataManagementWidget;
+class QBoxLayout;
+class QGroupBox;
+class QResizeEvent;
 
 class MainWindow : public QMainWindow
 {
@@ -27,6 +30,9 @@ public:
     explicit MainWindow(const QString &databasePath, QWidget *parent = nullptr);
 
     bool reloadTransactions(qint64 selectedId = 0);
+
+protected:
+    void resizeEvent(QResizeEvent *event) override;
 
 private:
     void showError(const QString &message);
@@ -59,6 +65,8 @@ private:
     QDateEdit *m_endDate = nullptr;
     QTableWidget *m_transactionTable = nullptr;
     QTableWidget *m_categorySummaryTable = nullptr;
+    QBoxLayout *m_recordsLayout = nullptr;
+    QGroupBox *m_categoryBox = nullptr;
     QLabel *m_emptyHint = nullptr;
     QLabel *m_errorLabel = nullptr;
     QLabel *m_totalLabel = nullptr;

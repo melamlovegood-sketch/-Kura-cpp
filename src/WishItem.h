@@ -12,6 +12,7 @@ struct WishItem
     qint64 estimatedCents = 0;
     QString category = QStringLiteral("购物");
     int coolingDays = 3;
+    int priority = 2; // 1 high, 2 medium, 3 low.
     QString reason;
     QDateTime createdAt;
     QDateTime readyAt;
@@ -23,4 +24,5 @@ struct WishItem
     QString validationError() const;
     bool canPurchase(const QDateTime &now) const;
     QString statusText(const QDateTime &now) const;
+    QString priorityText() const;
 };

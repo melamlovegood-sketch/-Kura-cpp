@@ -38,6 +38,11 @@ WishDialog::WishDialog(QWidget *parent) : QDialog(parent)
     m_category->addItems(Transaction::categories());
     m_category->setCurrentText(QStringLiteral("购物"));
     form->addRow(QStringLiteral("分类"), m_category);
+    m_priority = new QComboBox(this);
+    m_priority->setObjectName(QStringLiteral("wishPriorityComboBox"));
+    m_priority->addItems({QStringLiteral("高"), QStringLiteral("中"), QStringLiteral("低")});
+    m_priority->setCurrentIndex(1);
+    form->addRow(QStringLiteral("优先级"), m_priority);
     m_days = new QSpinBox(this);
     m_days->setObjectName(QStringLiteral("wishDaysSpinBox"));
     m_days->setRange(1, 30);
@@ -80,6 +85,7 @@ WishDialog::WishDialog(const WishItem &wish, QWidget *parent) : WishDialog(paren
     m_amount->setValue(wish.estimatedCents / 100.0);
     m_category->setCurrentText(wish.category);
     m_days->setValue(wish.coolingDays);
+    m_priority->setCurrentIndex(wish.priority - 1);
     m_reason->setText(wish.reason);
     findChild<QLabel *>(QStringLiteral("wishCoolingHint"))->setText(
         QStringLiteral("修改并保存会从现在重新开始冷静期，原来的创建时间保留。"));
@@ -92,6 +98,7 @@ WishItem WishDialog::item() const
     wish.estimatedCents = qRound64(m_amount->value() * 100.0);
     wish.category = m_category->currentText();
     wish.coolingDays = m_days->value();
+    wish.priority = m_priority->currentIndex() + 1;
     wish.reason = m_reason->text().trimmed();
     return wish;
 }

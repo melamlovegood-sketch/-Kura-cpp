@@ -110,7 +110,7 @@ bool checkSchema(const QSqlDatabase &database, QString &error)
             const bool integer = QSet<QString>{QStringLiteral("id"), QStringLiteral("amount_cents"),
                 QStringLiteral("limit_cents"), QStringLiteral("estimated_cents"), QStringLiteral("cooling_days"),
                 QStringLiteral("created_ms"), QStringLiteral("ready_ms"), QStringLiteral("status"),
-                QStringLiteral("closed_ms"), QStringLiteral("transaction_id")}.contains(column);
+                QStringLiteral("closed_ms"), QStringLiteral("transaction_id"), QStringLiteral("priority")}.contains(column);
             if (query.value(2).toString().toUpper() != (integer ? QStringLiteral("INTEGER") : QStringLiteral("TEXT"))) {
                 error = QStringLiteral("备份字段的类型与当前版本不兼容。"); return false;
             }
@@ -122,6 +122,7 @@ bool checkSchema(const QSqlDatabase &database, QString &error)
         QSet<QString> optional;
         if (schema.first == QStringLiteral("transactions"))
             optional = {QStringLiteral("occurred_time"), QStringLiteral("note")};
+        if (schema.first == QStringLiteral("wishlist")) optional = {QStringLiteral("priority")};
         if (!(schema.second - columns).isEmpty()) {
             error = QStringLiteral("备份缺少必要字段，不能恢复。"); return false;
         }
@@ -139,7 +140,7 @@ bool validateData(DatabaseManager &database, BackupInfo &info, QString &error)
     const QStringList invalidTypeQueries = {
         QStringLiteral("SELECT 1 FROM transactions WHERE typeof(id)!='integer' OR typeof(amount_cents)!='integer' OR typeof(description)!='text' OR typeof(category)!='text' OR typeof(date)!='text' OR typeof(occurred_time)!='text' OR typeof(note)!='text' LIMIT 1"),
         QStringLiteral("SELECT 1 FROM monthly_budgets WHERE typeof(month)!='text' OR typeof(limit_cents)!='integer' LIMIT 1"),
-        QStringLiteral("SELECT 1 FROM wishlist WHERE typeof(id)!='integer' OR typeof(estimated_cents)!='integer' OR typeof(cooling_days)!='integer' OR typeof(created_ms)!='integer' OR typeof(ready_ms)!='integer' OR typeof(status)!='integer' OR typeof(name)!='text' OR typeof(category)!='text' OR typeof(reason)!='text' OR (closed_ms IS NOT NULL AND typeof(closed_ms)!='integer') OR (transaction_id IS NOT NULL AND typeof(transaction_id)!='integer') LIMIT 1")};
+        QStringLiteral("SELECT 1 FROM wishlist WHERE typeof(id)!='integer' OR typeof(estimated_cents)!='integer' OR typeof(cooling_days)!='integer' OR typeof(priority)!='integer' OR typeof(created_ms)!='integer' OR typeof(ready_ms)!='integer' OR typeof(status)!='integer' OR typeof(name)!='text' OR typeof(category)!='text' OR typeof(reason)!='text' OR (closed_ms IS NOT NULL AND typeof(closed_ms)!='integer') OR (transaction_id IS NOT NULL AND typeof(transaction_id)!='integer') LIMIT 1")};
     for (const auto &statement : invalidTypeQueries) {
         if (!types.exec(statement) || types.next()) { error = QStringLiteral("备份中的数据类型无效。"); return false; }
         types.finish();
@@ -295,7 +296,7 @@ bool DatabaseBackupService::restorePrepared(QString &safetyBackup, QString &erro
         QStringLiteral("DELETE FROM main.wishlist"), QStringLiteral("DELETE FROM main.monthly_budgets"), QStringLiteral("DELETE FROM main.transactions"),
         QStringLiteral("INSERT INTO main.transactions(id,description,amount_cents,category,date,occurred_time,note) SELECT id,description,amount_cents,category,date,occurred_time,note FROM kura_restore.transactions"),
         QStringLiteral("INSERT INTO main.monthly_budgets(month,limit_cents) SELECT month,limit_cents FROM kura_restore.monthly_budgets"),
-        QStringLiteral("INSERT INTO main.wishlist(id,name,estimated_cents,category,cooling_days,reason,created_ms,ready_ms,status,closed_ms,transaction_id) SELECT id,name,estimated_cents,category,cooling_days,reason,created_ms,ready_ms,status,closed_ms,transaction_id FROM kura_restore.wishlist"),
+        QStringLiteral("INSERT INTO main.wishlist(id,name,estimated_cents,category,cooling_days,reason,created_ms,ready_ms,status,closed_ms,transaction_id,priority) SELECT id,name,estimated_cents,category,cooling_days,reason,created_ms,ready_ms,status,closed_ms,transaction_id,priority FROM kura_restore.wishlist"),
         QStringLiteral("DELETE FROM main.sqlite_sequence WHERE name IN ('transactions','wishlist')"),
         QStringLiteral("INSERT INTO main.sqlite_sequence(name,seq) SELECT name,seq FROM kura_restore.sqlite_sequence WHERE name IN ('transactions','wishlist')")};
     for (const auto &statement : statements) {

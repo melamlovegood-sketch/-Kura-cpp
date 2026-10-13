@@ -6,6 +6,7 @@
 #include "StatisticsWidget.h"
 #include "WishlistWidget.h"
 #include "DataManagementWidget.h"
+#include "AppTheme.h"
 
 #include <QAbstractButton>
 #include <QAbstractItemView>
@@ -20,6 +21,10 @@
 #include <QMessageBox>
 #include <QPushButton>
 #include <QStatusBar>
+#include <QScrollArea>
+#include <QResizeEvent>
+#include <QScreen>
+#include <QGuiApplication>
 #include <QTableWidget>
 #include <QTabWidget>
 #include <QVBoxLayout>
@@ -34,7 +39,10 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
     : QMainWindow(parent), m_database(databasePath), m_repository(m_database)
 {
     setWindowTitle(QStringLiteral("Kura C++"));
-    resize(920, 740);
+    AppTheme::apply(this);
+    const QSize screen = QGuiApplication::primaryScreen()
+        ? QGuiApplication::primaryScreen()->availableGeometry().size() : QSize(1240, 960);
+    resize(qBound(800, screen.width() - 60, 1180), qBound(600, screen.height() - 90, 860));
     setMinimumSize(800, 600);
 
     m_pages = new QTabWidget(this);
@@ -98,23 +106,27 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
     m_startDate->setDisplayFormat(QStringLiteral("yyyy-MM-dd"));
     m_startDate->setCalendarPopup(true);
     m_startDate->setEnabled(false);
-    filters->addWidget(m_startDate);
-    filters->addWidget(new QLabel(QStringLiteral("至"), central));
+    filters->addStretch();
+    layout->addLayout(filters);
+    auto *dateFilters = new QHBoxLayout;
+    dateFilters->addWidget(new QLabel(QStringLiteral("日期范围"), central));
+    dateFilters->addWidget(m_startDate);
+    dateFilters->addWidget(new QLabel(QStringLiteral("至"), central));
     m_endDate = new QDateEdit(today, central);
     m_endDate->setObjectName(QStringLiteral("endDateFilter"));
     m_endDate->setDateRange(QDate(1, 1, 1), QDate(9999, 12, 31));
     m_endDate->setDisplayFormat(QStringLiteral("yyyy-MM-dd"));
     m_endDate->setCalendarPopup(true);
     m_endDate->setEnabled(false);
-    filters->addWidget(m_endDate);
-    filters->addStretch();
+    dateFilters->addWidget(m_endDate);
+    dateFilters->addStretch();
     m_applyFilterButton = new QPushButton(QStringLiteral("筛选"), central);
     m_applyFilterButton->setObjectName(QStringLiteral("applyFilterButton"));
     m_resetFilterButton = new QPushButton(QStringLiteral("重置"), central);
     m_resetFilterButton->setObjectName(QStringLiteral("resetFilterButton"));
-    filters->addWidget(m_applyFilterButton);
-    filters->addWidget(m_resetFilterButton);
-    layout->addLayout(filters);
+    dateFilters->addWidget(m_applyFilterButton);
+    dateFilters->addWidget(m_resetFilterButton);
+    layout->addLayout(dateFilters);
 
     m_errorLabel = new QLabel(central);
     m_errorLabel->setObjectName(QStringLiteral("databaseErrorLabel"));
@@ -145,11 +157,15 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
     m_transactionTable->setSelectionMode(QAbstractItemView::SingleSelection);
     m_transactionTable->setAlternatingRowColors(true);
     m_transactionTable->verticalHeader()->hide();
+    m_transactionTable->verticalHeader()->setDefaultSectionSize(36);
+    m_transactionTable->setMinimumHeight(200);
     m_transactionTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     m_transactionTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     auto *records = new QHBoxLayout;
+    m_recordsLayout = records;
     records->addWidget(m_transactionTable, 3);
     auto *categoryBox = new QGroupBox(QStringLiteral("本月分类支出"), central);
+    m_categoryBox = categoryBox;
     auto *categoryLayout = new QVBoxLayout(categoryBox);
     m_categorySummaryTable = new QTableWidget(Transaction::categories().size(), 2, categoryBox);
     m_categorySummaryTable->setObjectName(QStringLiteral("categorySummaryTable"));
@@ -159,6 +175,8 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
     m_categorySummaryTable->setSelectionMode(QAbstractItemView::NoSelection);
     m_categorySummaryTable->setAlternatingRowColors(true);
     m_categorySummaryTable->verticalHeader()->hide();
+    m_categorySummaryTable->verticalHeader()->setDefaultSectionSize(34);
+    m_categorySummaryTable->setMinimumHeight(245);
     m_categorySummaryTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     m_categorySummaryTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
     m_categorySummaryTable->setMinimumWidth(200);
@@ -180,7 +198,11 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
     m_emptyHint->setObjectName(QStringLiteral("emptyHint"));
     m_emptyHint->setWordWrap(true);
     layout->addWidget(m_emptyHint);
-    m_pages->addTab(central, QStringLiteral("记账与预算"));
+    auto *recordScroll = new QScrollArea(m_pages);
+    recordScroll->setObjectName(QStringLiteral("recordsScrollArea"));
+    recordScroll->setWidgetResizable(true);
+    recordScroll->setWidget(central);
+    m_pages->addTab(recordScroll, QStringLiteral("记账与预算"));
     m_statisticsWidget = new StatisticsWidget(m_pages);
     m_pages->addTab(m_statisticsWidget, QStringLiteral("消费统计"));
     m_wishlistWidget = new WishlistWidget(m_database, m_pages);
@@ -243,6 +265,16 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
     m_budgetWidget->setDatabaseAvailable(m_databaseReady);
     m_wishlistWidget->setDatabaseAvailable(m_databaseReady);
     m_dataWidget->setDatabaseAvailable(m_databaseReady);
+}
+
+void MainWindow::resizeEvent(QResizeEvent *event)
+{
+    QMainWindow::resizeEvent(event);
+    if (m_recordsLayout) {
+        const bool compact = width() < 1050;
+        m_recordsLayout->setDirection(compact ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
+        m_categoryBox->setMaximumHeight(compact ? 365 : QWIDGETSIZE_MAX);
+    }
 }
 
 void MainWindow::openTransactionDialog(const Transaction *existing)

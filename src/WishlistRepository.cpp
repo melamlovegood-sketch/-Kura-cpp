@@ -25,6 +25,7 @@ void bindInput(QSqlQuery &query, const WishItem &item)
     query.bindValue(QStringLiteral(":amount"), item.estimatedCents);
     query.bindValue(QStringLiteral(":category"), item.category);
     query.bindValue(QStringLiteral(":days"), item.coolingDays);
+    query.bindValue(QStringLiteral(":priority"), item.priority);
     const QString reason = item.reason.trimmed();
     // An omitted optional QString must be stored as empty text, not SQL NULL.
     query.bindValue(QStringLiteral(":reason"), reason.isNull() ? QStringLiteral("") : reason);
@@ -62,7 +63,7 @@ bool WishlistRepository::add(WishItem &item, const QDateTime &now)
     saved.transactionId = 0;
     QSqlQuery query(m_database.database());
     query.prepare(QStringLiteral("INSERT INTO wishlist(name, estimated_cents, category, cooling_days, reason, "
-        "created_ms, ready_ms, status) VALUES(:name,:amount,:category,:days,:reason,:created,:ready,0)"));
+        "created_ms, ready_ms, status,priority) VALUES(:name,:amount,:category,:days,:reason,:created,:ready,0,:priority)"));
     bindInput(query, saved);
     query.bindValue(QStringLiteral(":created"), saved.createdAt.toMSecsSinceEpoch());
     query.bindValue(QStringLiteral(":ready"), saved.readyAt.toMSecsSinceEpoch());
@@ -88,7 +89,7 @@ bool WishlistRepository::update(const WishItem &item, const QDateTime &now)
     if (!connectionReady()) return false;
     QSqlQuery query(m_database.database());
     query.prepare(QStringLiteral("UPDATE wishlist SET name=:name,estimated_cents=:amount,category=:category,"
-        "cooling_days=:days,reason=:reason,ready_ms=:ready WHERE id=:id AND status=0 AND created_ms<=:now"));
+        "cooling_days=:days,priority=:priority,reason=:reason,ready_ms=:ready WHERE id=:id AND status=0 AND created_ms<=:now"));
     bindInput(query, item);
     query.bindValue(QStringLiteral(":id"), item.id);
     query.bindValue(QStringLiteral(":ready"), ready.toMSecsSinceEpoch());
@@ -213,7 +214,7 @@ bool WishlistRepository::findAll(QList<WishItem> &items)
     if (!connectionReady()) return false;
     QSqlQuery query(m_database.database());
     if (!query.exec(QStringLiteral("SELECT id,name,estimated_cents,category,cooling_days,reason,"
-        "created_ms,ready_ms,status,closed_ms,transaction_id FROM wishlist ORDER BY created_ms DESC,id DESC"))) {
+        "created_ms,ready_ms,status,closed_ms,transaction_id,priority FROM wishlist ORDER BY created_ms DESC,id DESC"))) {
         m_lastError = queryError(query.lastError());
         return false;
     }
@@ -232,6 +233,7 @@ bool WishlistRepository::findAll(QList<WishItem> &items)
         if (!query.value(9).isNull())
             item.closedAt = QDateTime::fromMSecsSinceEpoch(query.value(9).toLongLong()).toUTC();
         item.transactionId = query.value(10).toLongLong();
+        item.priority = query.value(11).toInt();
         if (item.id <= 0 || !item.validationError().isEmpty()) {
             m_lastError = QStringLiteral("数据库中编号 %1 的愿望无效，请检查数据文件。").arg(item.id);
             return false;

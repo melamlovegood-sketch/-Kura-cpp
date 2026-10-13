@@ -134,9 +134,20 @@ bool DatabaseManager::initialize()
             "reason TEXT NOT NULL CHECK(length(reason)<=500), "
             "created_ms INTEGER NOT NULL, ready_ms INTEGER NOT NULL CHECK(ready_ms>=created_ms), "
             "status INTEGER NOT NULL DEFAULT 0 CHECK(status IN (0,1,2)), "
-            "closed_ms INTEGER, transaction_id INTEGER)"))) {
+            "closed_ms INTEGER, transaction_id INTEGER, "
+            "priority INTEGER NOT NULL DEFAULT 2 CHECK(priority BETWEEN 1 AND 3))"))) {
         m_lastError = QStringLiteral("无法初始化愿望清单表：%1").arg(query.lastError().text());
         return false;
+    }
+    if (!query.exec(QStringLiteral("PRAGMA table_info(wishlist)"))) {
+        m_lastError = query.lastError().text(); return false;
+    }
+    bool hasPriority = false;
+    while (query.next()) hasPriority |= query.value(1).toString() == QStringLiteral("priority");
+    if (query.lastError().isValid()) { m_lastError = query.lastError().text(); return false; }
+    query.finish();
+    if (!hasPriority && !query.exec(QStringLiteral("ALTER TABLE wishlist ADD COLUMN priority INTEGER NOT NULL DEFAULT 2 CHECK(priority BETWEEN 1 AND 3)"))) {
+        m_lastError = QStringLiteral("无法升级愿望优先级：%1").arg(query.lastError().text()); return false;
     }
     return true;
 }
