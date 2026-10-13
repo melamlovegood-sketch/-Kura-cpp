@@ -4,6 +4,7 @@
 
 class QPushButton;
 class QTableWidget;
+class QLabel;
 
 class MainWindow : public QMainWindow
 {
@@ -15,4 +16,5 @@ public:
 private:
     QPushButton *m_addButton = nullptr;
     QTableWidget *m_transactionTable = nullptr;
+    QLabel *m_emptyHint = nullptr;
 };
