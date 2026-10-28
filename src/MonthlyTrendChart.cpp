@@ -34,8 +34,12 @@ void MonthlyTrendChart::paintEvent(QPaintEvent *)
 {
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
-    painter.fillRect(rect(), palette().base());
-    painter.setPen(palette().text().color());
+    // QSS does not paint this custom chart. Use the window colors explicitly so
+    // switching to dark mode cannot leave a white plot behind light labels.
+    const auto chartPalette = window()->palette();
+    const QColor ink = chartPalette.windowText().color();
+    painter.fillRect(rect(), chartPalette.window());
+    painter.setPen(ink);
     if (!m_hasSnapshot) {
         painter.drawText(rect(), Qt::AlignCenter, QStringLiteral("统计暂未加载。"));
         return;
@@ -52,10 +56,11 @@ void MonthlyTrendChart::paintEvent(QPaintEvent *)
         maximum = qMax(maximum, month.totalCents);
     for (int tick = 0; tick <= 4; ++tick) {
         const qreal y = plot.bottom() - plot.height() * tick / 4.0;
-        painter.setPen(palette().mid().color());
+        QColor grid = ink; grid.setAlpha(45);
+        painter.setPen(grid);
         painter.drawLine(QPointF(plot.left(), y), QPointF(plot.right(), y));
         const qint64 cents = maximum / 4 * tick + maximum % 4 * tick / 4;
-        painter.setPen(palette().text().color());
+        painter.setPen(ink);
         painter.drawText(QRectF(0, y - 10, plot.left() - 8, 20),
                          Qt::AlignRight | Qt::AlignVCenter, Transaction::formatAmount(cents));
     }
@@ -67,10 +72,10 @@ void MonthlyTrendChart::paintEvent(QPaintEvent *)
         const qreal x = plot.left() + slot * (i + 0.5);
         if (month.totalCents > 0) {
             const qreal height = qMax(1.0, plot.height() * static_cast<double>(month.totalCents) / maximum);
-            painter.fillRect(QRectF(x - barWidth / 2, plot.bottom() - height, barWidth, height),
-                             i == peak ? QColor(QStringLiteral("#245b8f")) : QColor(QStringLiteral("#5b95c7")));
+            QColor bar = ink; bar.setAlpha(i == peak ? 255 : 140);
+            painter.fillRect(QRectF(x - barWidth / 2, plot.bottom() - height, barWidth, height), bar);
         }
-        painter.setPen(palette().text().color());
+        painter.setPen(ink);
         painter.drawText(QRectF(x - slot / 2, plot.bottom() + 8, slot, 20), Qt::AlignCenter,
                          QStringLiteral("%1月").arg(month.month.month()));
     }

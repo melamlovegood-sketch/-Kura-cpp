@@ -26,6 +26,11 @@ struct MonthlyBudgetStatus
     bool hasBudget = false;
     qint64 limitCents = 0;
     qint64 spentCents = 0;
+    bool hasSplit = false;
+    qint64 basicLimitCents = 0;
+    qint64 discretionaryLimitCents = 0;
+    qint64 basicSpentCents = 0;
+    qint64 discretionarySpentCents = 0;
 
     qint64 remainingCents() const;
     bool isOverBudget() const;

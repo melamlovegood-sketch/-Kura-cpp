@@ -17,6 +17,9 @@ public:
     bool refresh();
     void setMonth(const QDate &month);
 
+signals:
+    void budgetSaved();
+
 private:
     bool loadSelectedMonth(bool resetAmount);
     void saveBudget();
@@ -28,6 +31,8 @@ private:
     bool m_hasLoaded = false;
     QDateEdit *m_monthEdit = nullptr;
     QDoubleSpinBox *m_amountEdit = nullptr;
+    QDoubleSpinBox *m_basicAmountEdit = nullptr;
+    QLabel *m_splitLabel = nullptr;
     QPushButton *m_saveButton = nullptr;
     QLabel *m_limitLabel = nullptr;
     QLabel *m_spentLabel = nullptr;

@@ -22,6 +22,7 @@ signals:
     void saveRequested();
 private:
     WishItem m_original;
+    bool m_customCooling=false;
     QLineEdit *m_name;
     QDoubleSpinBox *m_amount;
     QComboBox *m_category;

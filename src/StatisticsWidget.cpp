@@ -1,3 +1,4 @@
+#include "ModernSelectors.h"
 #include "StatisticsWidget.h"
 #include "MonthlyTrendChart.h"
 #include "CategorySummary.h"
@@ -21,11 +22,8 @@ StatisticsWidget::StatisticsWidget(QWidget *parent) : QWidget(parent)
     layout->setContentsMargins(24, 24, 24, 24);
     layout->setSpacing(16);
     auto *heading = new QHBoxLayout;
-    auto *title = new QLabel(QStringLiteral("月度支出趋势"), this);
-    QFont font = title->font();
-    font.setPointSize(18);
-    font.setBold(true);
-    title->setFont(font);
+    auto *title = new QLabel(QStringLiteral("消费复盘"), this);
+    title->setProperty("heading", true);
     heading->addWidget(title);
     heading->addStretch();
     heading->addWidget(new QLabel(QStringLiteral("年份"), this));
@@ -54,7 +52,7 @@ StatisticsWidget::StatisticsWidget(QWidget *parent) : QWidget(parent)
     m_errorLabel->setObjectName(QStringLiteral("statisticsErrorLabel"));
     m_errorLabel->setTextFormat(Qt::PlainText);
     m_errorLabel->setWordWrap(true);
-    m_errorLabel->setStyleSheet(QStringLiteral("color: #b42318;"));
+    m_errorLabel->setProperty("error", true);
     m_errorLabel->hide();
     layout->addWidget(m_errorLabel);
     m_chart = new MonthlyTrendChart(this);
@@ -88,7 +86,7 @@ StatisticsWidget::StatisticsWidget(QWidget *parent) : QWidget(parent)
     auto *categoryLayout = new QVBoxLayout(categoryPage);
     auto *categoryHeading = new QHBoxLayout;
     categoryHeading->addWidget(new QLabel(QStringLiteral("统计月份"),categoryPage));
-    m_categoryMonth = new QComboBox(categoryPage);
+    m_categoryMonth = new ModernComboBox(categoryPage);
     m_categoryMonth->setObjectName(QStringLiteral("categoryReviewMonthComboBox"));
     for (int month=1;month<=12;++month) m_categoryMonth->addItem(QStringLiteral("%1月").arg(month));
     m_categoryMonth->setCurrentIndex(QDate::currentDate().month()-1);
@@ -185,6 +183,13 @@ void StatisticsWidget::render(const YearlyExpenseStatistics &statistics)
     else
         showLoadError(m_loadError);
     updateSelection();
+}
+
+void StatisticsWidget::setMonth(const QDate &month)
+{
+    if (!month.isValid()) return;
+    m_yearEdit->setValue(month.year());
+    m_categoryMonth->setCurrentIndex(month.month()-1);
 }
 
 void StatisticsWidget::renderCategories()

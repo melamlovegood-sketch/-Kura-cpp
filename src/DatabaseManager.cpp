@@ -1,4 +1,6 @@
 #include "DatabaseManager.h"
+#include "DecisionSchema.h"
+#include "ProductRepository.h"
 
 #include <QDir>
 #include <QFileInfo>
@@ -149,7 +151,7 @@ bool DatabaseManager::initialize()
     if (!hasPriority && !query.exec(QStringLiteral("ALTER TABLE wishlist ADD COLUMN priority INTEGER NOT NULL DEFAULT 2 CHECK(priority BETWEEN 1 AND 3)"))) {
         m_lastError = QStringLiteral("无法升级愿望优先级：%1").arg(query.lastError().text()); return false;
     }
-    return true;
+    return DecisionSchema::upgrade(connection, m_lastError) && ProductSchema::upgrade(connection,m_lastError);
 }
 
 QSqlDatabase DatabaseManager::database() const

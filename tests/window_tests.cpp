@@ -1,3 +1,4 @@
+#include "CategoryCatalog.h"
 #include "AddTransactionDialog.h"
 #include "DatabaseManager.h"
 #include "TransactionRepository.h"
@@ -19,6 +20,7 @@
 #include <QSignalSpy>
 #include <QSqlQuery>
 #include <QStandardPaths>
+#include <QStackedWidget>
 #include <QTableWidget>
 #include <QTemporaryDir>
 #include <QtTest>
@@ -31,6 +33,7 @@ static void settle()
 
 static AddTransactionDialog *openDialog(MainWindow &window)
 {
+    window.findChild<QStackedWidget *>("billingPageStack")->setCurrentIndex(1);
     window.findChild<QPushButton *>(QStringLiteral("addTransactionButton"))->click();
     settle();
     return window.findChild<AddTransactionDialog *>();
@@ -41,7 +44,7 @@ static void fill(AddTransactionDialog &dialog, const QString &name, double amoun
 {
     dialog.findChild<QLineEdit *>(QStringLiteral("descriptionEdit"))->setText(name);
     dialog.findChild<QDoubleSpinBox *>(QStringLiteral("amountSpinBox"))->setValue(amount);
-    dialog.findChild<QComboBox *>(QStringLiteral("categoryComboBox"))->setCurrentText(category);
+    dialog.findChild<QComboBox *>(QStringLiteral("categoryComboBox"))->setCurrentText(CategoryCatalog::label(CategoryCatalog::fromLegacy(category)));
     dialog.findChild<QDateEdit *>(QStringLiteral("dateEdit"))->setDate(date);
 }
 
@@ -78,7 +81,7 @@ void WindowTests::saveThenRestart()
     const QString path = directory.filePath(QStringLiteral("kura.sqlite"));
     qint64 savedId = 0;
     {
-        MainWindow window(path);
+        MainWindow window(path); window.showPage(MainWindow::Page::Billing);
         window.show();
         settle();
         auto *table = window.findChild<QTableWidget *>(QStringLiteral("transactionTable"));
@@ -111,7 +114,7 @@ void WindowTests::saveThenRestart()
         QCOMPARE(table->item(1, 3)->text(), QStringLiteral("¥4.00"));
     }
     {
-        MainWindow restarted(path);
+        MainWindow restarted(path); restarted.showPage(MainWindow::Page::Billing);
         restarted.show();
         settle();
         auto *table = restarted.findChild<QTableWidget *>(QStringLiteral("transactionTable"));
@@ -127,7 +130,7 @@ void WindowTests::saveThenRestart()
 
 void WindowTests::invalidAndCancelledInputs()
 {
-    MainWindow window(QStringLiteral(":memory:"));
+    MainWindow window(QStringLiteral(":memory:")); window.showPage(MainWindow::Page::Billing);
     window.show();
     settle();
     auto *table = window.findChild<QTableWidget *>(QStringLiteral("transactionTable"));
@@ -170,7 +173,7 @@ void WindowTests::lockedDatabasePreservesInputAndRetry()
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
     const QString path = directory.filePath(QStringLiteral("locked.sqlite"));
-    MainWindow window(path);
+    MainWindow window(path); window.showPage(MainWindow::Page::Billing);
     window.show();
     settle();
     DatabaseManager blocker(path);
@@ -214,11 +217,11 @@ void WindowTests::initialDatabaseFailure()
 {
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
-    MainWindow window(directory.path()); // A directory cannot be opened as a database file.
+    MainWindow window(directory.path()); window.showPage(MainWindow::Page::Billing); // A directory cannot be opened as a database file.
     window.show();
     settle();
     QVERIFY(!window.findChild<QPushButton *>(QStringLiteral("addTransactionButton"))->isEnabled());
-    auto *error = window.findChild<QLabel *>(QStringLiteral("databaseErrorLabel"));
+    auto *error = window.findChild<QLabel *>(QStringLiteral("billingLoadErrorLabel"));
     QVERIFY(error->isVisible());
     QVERIFY(!error->text().isEmpty());
     QCOMPARE(window.findChild<QTableWidget *>(QStringLiteral("transactionTable"))->rowCount(), 0);
@@ -229,7 +232,7 @@ void WindowTests::refreshFailurePreservesTable()
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
     const QString path = directory.filePath(QStringLiteral("refresh.sqlite"));
-    MainWindow window(path);
+    MainWindow window(path); window.showPage(MainWindow::Page::Billing);
     window.show();
     settle();
     auto *dialog = openDialog(window);
@@ -270,7 +273,7 @@ void WindowTests::editAndDeleteThenRestart()
         keptId = a.id();
     }
     {
-        MainWindow window(path);
+        MainWindow window(path); window.showPage(MainWindow::Page::Billing);
         window.show();
         settle();
         auto *table = window.findChild<QTableWidget *>(QStringLiteral("transactionTable"));
@@ -306,7 +309,7 @@ void WindowTests::editAndDeleteThenRestart()
         QCOMPARE(table->currentRow(), 1); // Date change reordered rows, selection follows the id.
         QCOMPARE(table->item(1, 0)->data(Qt::UserRole).toLongLong(), keptId);
         QCOMPARE(table->item(1, 1)->text(), QStringLiteral("教材"));
-        QCOMPARE(table->item(1, 2)->text(), QStringLiteral("学习"));
+        QCOMPARE(table->item(1, 2)->text(), QStringLiteral("学习（旧分类）"));
         QCOMPARE(table->item(1, 3)->text(), QStringLiteral("¥32.50"));
         QCOMPARE(window.findChild<QLabel *>(QStringLiteral("totalExpenseLabel"))->text(),
                  QStringLiteral("全部支出：¥36.50"));
@@ -340,7 +343,7 @@ void WindowTests::editAndDeleteThenRestart()
                  QStringLiteral("全部支出：¥32.50"));
     }
     {
-        MainWindow restarted(path);
+        MainWindow restarted(path); restarted.showPage(MainWindow::Page::Billing);
         restarted.show();
         settle();
         auto *table = restarted.findChild<QTableWidget *>(QStringLiteral("transactionTable"));
@@ -360,7 +363,7 @@ void WindowTests::editAndDeleteThenRestart()
         QVERIFY(!restarted.findChild<QPushButton *>(QStringLiteral("deleteTransactionButton"))->isEnabled());
         QVERIFY(!restarted.findChild<QPushButton *>(QStringLiteral("editTransactionButton"))->isEnabled());
     }
-    MainWindow empty(path);
+    MainWindow empty(path); empty.showPage(MainWindow::Page::Billing);
     QCOMPARE(empty.findChild<QTableWidget *>(QStringLiteral("transactionTable"))->rowCount(), 0);
 }
 
@@ -382,7 +385,8 @@ void WindowTests::filtersAndTotalsUpdate()
         for (auto &record : fixtures)
             QVERIFY(repository.add(record));
     }
-    MainWindow window(path);
+    MainWindow window(path); window.showPage(MainWindow::Page::Billing);
+    window.findChild<QStackedWidget *>("billingPageStack")->setCurrentIndex(1);
     window.show();
     settle();
     auto *table = window.findChild<QTableWidget *>(QStringLiteral("transactionTable"));
@@ -460,7 +464,7 @@ void WindowTests::lockedEditsAndDeletes()
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
     const QString path = directory.filePath(QStringLiteral("locked-crud.sqlite"));
-    MainWindow window(path);
+    MainWindow window(path); window.showPage(MainWindow::Page::Billing);
     window.show();
     settle();
     auto *dialog = openDialog(window);
@@ -519,7 +523,7 @@ void WindowTests::missingEditedRecordNotRecreated()
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
     const QString path = directory.filePath(QStringLiteral("missing.sqlite"));
-    MainWindow window(path);
+    MainWindow window(path); window.showPage(MainWindow::Page::Billing);
     window.show();
     settle();
     auto *dialog = openDialog(window);
@@ -554,7 +558,7 @@ void WindowTests::missingEditedRecordNotRecreated()
 
 void WindowTests::editedRecordMovesOutOfFilter()
 {
-    MainWindow window(QStringLiteral(":memory:"));
+    MainWindow window(QStringLiteral(":memory:")); window.showPage(MainWindow::Page::Billing);
     window.show();
     settle();
     auto *dialog = openDialog(window);
@@ -593,7 +597,7 @@ void WindowTests::notesAndTimeSaveEditRestart()
     const QString note = QStringLiteral("午饭\n与同学 AA，<b>文字</b>");
     qint64 id = 0;
     {
-        MainWindow window(path);
+        MainWindow window(path); window.showPage(MainWindow::Page::Billing);
         window.show();
         settle();
         auto *table = window.findChild<QTableWidget *>(QStringLiteral("transactionTable"));
@@ -640,7 +644,7 @@ void WindowTests::notesAndTimeSaveEditRestart()
         QCOMPARE(table->item(0, 0)->text(), QStringLiteral("2026-10-13 00:00:01"));
         QVERIFY(table->item(0, 4)->text().isEmpty());
     }
-    MainWindow restarted(path);
+    MainWindow restarted(path); restarted.showPage(MainWindow::Page::Billing);
     auto *table = restarted.findChild<QTableWidget *>(QStringLiteral("transactionTable"));
     QCOMPARE(table->rowCount(), 1);
     QCOMPARE(table->item(0, 0)->data(Qt::UserRole).toLongLong(), id);
@@ -665,7 +669,7 @@ void WindowTests::legacyTimeAndNoteValidation()
         Transaction legacy(0, QStringLiteral("旧记录"), 100, QStringLiteral("其他"), QDate(2026, 10, 13));
         QVERIFY(repository.add(legacy));
     }
-    MainWindow window(path);
+    MainWindow window(path); window.showPage(MainWindow::Page::Billing);
     window.show();
     settle();
     auto *table = window.findChild<QTableWidget *>(QStringLiteral("transactionTable"));

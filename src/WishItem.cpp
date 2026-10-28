@@ -2,7 +2,7 @@
 
 QString WishItem::inputError() const
 {
-    const QString error = Transaction(id, name, estimatedCents, category, QDate(2026, 1, 1)).validationError();
+    const QString error = Transaction(id, name, estimatedCents, category, QDate(2026, 1, 1), {}, {}, detailCategory, sourceImage).validationError();
     if (!error.isEmpty())
         return error;
     if (coolingDays < 1 || coolingDays > 30)

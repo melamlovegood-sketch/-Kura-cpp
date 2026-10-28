@@ -1,5 +1,6 @@
 #include "TransactionRepository.h"
 #include "DatabaseManager.h"
+#include "WorkflowStorage.h"
 
 #include <QSqlError>
 #include <QSqlQuery>
@@ -38,8 +39,8 @@ bool TransactionRepository::add(Transaction &transaction)
     }
     QSqlQuery query(connection);
     if (!query.prepare(QStringLiteral(
-            "INSERT INTO transactions(description, amount_cents, category, date, occurred_time, note) "
-            "VALUES (:description, :amount, :category, :date, :time, :note)"))) {
+            "INSERT INTO transactions(description, amount_cents, category, date, occurred_time, note, detail_category, source_image) "
+            "VALUES (:description, :amount, :category, :date, :time, :note, :detail, :image)"))) {
         m_lastError = QStringLiteral("无法准备保存操作：%1").arg(query.lastError().text());
         return false;
     }
@@ -50,13 +51,15 @@ bool TransactionRepository::add(Transaction &transaction)
     query.bindValue(QStringLiteral(":time"), transaction.time().isValid()
         ? transaction.time().toString(QStringLiteral("HH:mm:ss")) : QStringLiteral(""));
     query.bindValue(QStringLiteral(":note"), transaction.note().isNull() ? QStringLiteral("") : transaction.note());
+    query.bindValue(QStringLiteral(":detail"), transaction.detailCategory());
+    query.bindValue(QStringLiteral(":image"), transaction.sourceImage().isNull() ? QByteArray("") : transaction.sourceImage());
     if (!query.exec()) {
         m_lastError = writeError(query.lastError());
         return false;
     }
     transaction = Transaction(query.lastInsertId().toLongLong(), transaction.description(),
                               transaction.amountCents(), transaction.category(), transaction.date(),
-                              transaction.time(), transaction.note());
+                              transaction.time(), transaction.note(), transaction.detailCategory(), transaction.sourceImage());
     m_lastError.clear();
     return true;
 }
@@ -78,7 +81,7 @@ bool TransactionRepository::update(const Transaction &transaction)
     QSqlQuery query(connection);
     if (!query.prepare(QStringLiteral(
             "UPDATE transactions SET description=:description, amount_cents=:amount, "
-            "category=:category, date=:date, occurred_time=:time, note=:note WHERE id=:id"))) {
+            "category=:category, date=:date, occurred_time=:time, note=:note, detail_category=:detail, source_image=:image WHERE id=:id"))) {
         m_lastError = writeError(query.lastError());
         return false;
     }
@@ -90,6 +93,8 @@ bool TransactionRepository::update(const Transaction &transaction)
     query.bindValue(QStringLiteral(":time"), transaction.time().isValid()
         ? transaction.time().toString(QStringLiteral("HH:mm:ss")) : QStringLiteral(""));
     query.bindValue(QStringLiteral(":note"), transaction.note().isNull() ? QStringLiteral("") : transaction.note());
+    query.bindValue(QStringLiteral(":detail"), transaction.detailCategory());
+    query.bindValue(QStringLiteral(":image"), transaction.sourceImage().isNull() ? QByteArray("") : transaction.sourceImage());
     if (!query.exec()) {
         m_lastError = writeError(query.lastError());
         return false;
@@ -114,7 +119,11 @@ bool TransactionRepository::remove(qint64 id)
         m_lastError = QStringLiteral("数据库未打开，无法删除记录。");
         return false;
     }
+    WorkflowStorage::Transaction removal(connection,m_lastError); if (!removal.ok()) return false;
     QSqlQuery query(connection);
+    for (const auto &sql:{"DELETE FROM transaction_reviews WHERE transaction_id=:id","UPDATE bill_import_keys SET transaction_id=NULL WHERE transaction_id=:id"}) { query.prepare(sql); query.bindValue(":id",id); if (!query.exec()) { m_lastError=writeError(query.lastError()); return false; } query.finish(); }
+    query.prepare("DELETE FROM review_tasks WHERE transaction_id=:id AND completed_ms IS NULL"); query.bindValue(":id",id);
+    if (!query.exec()) { m_lastError=writeError(query.lastError()); return false; } query.finish();
     if (!query.prepare(QStringLiteral("DELETE FROM transactions WHERE id=:id"))) {
         m_lastError = writeError(query.lastError());
         return false;
@@ -128,7 +137,7 @@ bool TransactionRepository::remove(qint64 id)
         m_lastError = QStringLiteral("这条记录已不存在，请刷新列表后重试。");
         return false;
     }
-    return true;
+    query.finish(); return removal.commit();
 }
 
 bool TransactionRepository::findAll(QList<Transaction> &transactions)
@@ -141,7 +150,7 @@ bool TransactionRepository::findAll(QList<Transaction> &transactions)
     }
     QSqlQuery query(connection);
     if (!query.exec(QStringLiteral(
-            "SELECT id, description, amount_cents, category, date, occurred_time, note FROM transactions "
+            "SELECT id, description, amount_cents, category, date, occurred_time, note, detail_category, source_image FROM transactions "
             "ORDER BY date DESC, occurred_time DESC, id DESC"))) {
         m_lastError = QStringLiteral("无法读取消费记录：%1").arg(query.lastError().text());
         return false;
@@ -153,7 +162,7 @@ bool TransactionRepository::findAll(QList<Transaction> &transactions)
         Transaction transaction(query.value(0).toLongLong(), query.value(1).toString(),
                                 query.value(2).toLongLong(), query.value(3).toString(),
                                 QDate::fromString(query.value(4).toString(), Qt::ISODate), time,
-                                query.value(6).toString());
+                                query.value(6).toString(), query.value(7).toString(), query.value(8).toByteArray());
         if (transaction.id() <= 0 || !transaction.validationError().isEmpty()
             || (!timeText.isEmpty() && (!time.isValid() || time.toString(QStringLiteral("HH:mm:ss")) != timeText))) {
             m_lastError = QStringLiteral("数据库中编号 %1 的记录无效，请检查数据文件。")

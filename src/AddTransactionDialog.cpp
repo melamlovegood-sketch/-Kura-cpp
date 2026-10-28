@@ -1,4 +1,7 @@
+#include "ModernSelectors.h"
 #include "AddTransactionDialog.h"
+#include "CategoryCatalog.h"
+#include "ImagePreview.h"
 
 #include <QComboBox>
 #include <QCheckBox>
@@ -27,6 +30,7 @@ AddTransactionDialog::AddTransactionDialog(QWidget *parent)
     layout->setSpacing(16);
 
     auto *form = new QFormLayout;
+    m_form=form;
     form->setSpacing(12);
     form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 
@@ -45,12 +49,14 @@ AddTransactionDialog::AddTransactionDialog(QWidget *parent)
     m_amountSpinBox->setSuffix(QStringLiteral(" 元"));
     form->addRow(QStringLiteral("金额"), m_amountSpinBox);
 
-    m_categoryComboBox = new QComboBox(this);
+    m_categoryComboBox = new ModernComboBox(this);
     m_categoryComboBox->setObjectName(QStringLiteral("categoryComboBox"));
-    m_categoryComboBox->addItems(Transaction::categories());
+    for (const auto &key : CategoryCatalog::keys()) m_categoryComboBox->addItem(CategoryCatalog::label(key),key);
+    m_categoryComboBox->setCurrentIndex(m_categoryComboBox->findData(QStringLiteral("daily")));
+    connect(m_categoryComboBox,&QComboBox::currentIndexChanged,this,[this] { refreshBrands(); });
     form->addRow(QStringLiteral("分类"), m_categoryComboBox);
 
-    m_dateEdit = new QDateEdit(QDate::currentDate(), this);
+    m_dateEdit = new DatePicker(QDate::currentDate(), this);
     m_dateEdit->setObjectName(QStringLiteral("dateEdit"));
     m_dateEdit->setDateRange(QDate(1, 1, 1), QDate(9999, 12, 31));
     m_dateEdit->setDisplayFormat(QStringLiteral("yyyy-MM-dd"));
@@ -83,7 +89,7 @@ AddTransactionDialog::AddTransactionDialog(QWidget *parent)
     m_errorLabel->setObjectName(QStringLiteral("validationErrorLabel"));
     m_errorLabel->setTextFormat(Qt::PlainText);
     m_errorLabel->setWordWrap(true);
-    m_errorLabel->setStyleSheet(QStringLiteral("color: #b42318;"));
+    m_errorLabel->setProperty("error", true);
     m_errorLabel->setMinimumHeight(m_errorLabel->fontMetrics().height());
     layout->addWidget(m_errorLabel);
 
@@ -109,7 +115,9 @@ AddTransactionDialog::AddTransactionDialog(const Transaction &transaction, QWidg
     setWindowTitle(QStringLiteral("修改消费"));
     m_descriptionEdit->setText(transaction.description());
     m_amountSpinBox->setValue(transaction.amount());
-    m_categoryComboBox->setCurrentText(transaction.category());
+    m_categoryComboBox->setCurrentIndex(m_categoryComboBox->findData(transaction.detailCategory()));
+    m_sourceImage=transaction.sourceImage();
+    if (!m_sourceImage.isEmpty()) qobject_cast<QVBoxLayout *>(layout())->insertWidget(1,screenshotButton(this,m_sourceImage));
     m_dateEdit->setDate(transaction.date());
     m_noteEdit->setPlainText(transaction.note());
     const bool unknownExistingTime = transaction.id() > 0 && !transaction.time().isValid();
@@ -131,7 +139,7 @@ double AddTransactionDialog::amount() const
 
 QString AddTransactionDialog::category() const
 {
-    return m_categoryComboBox->currentText();
+    return CategoryCatalog::legacyCategory(m_categoryComboBox->currentData().toString());
 }
 
 QDate AddTransactionDialog::date() const
@@ -201,7 +209,7 @@ void AddTransactionDialog::accept()
 
 Transaction AddTransactionDialog::transaction() const
 {
-    return Transaction(m_transactionId, description(), qRound64(amount() * 100.0), category(), date(), time(), note());
+    return Transaction(m_transactionId, description(), qRound64(amount() * 100.0), category(), date(), time(), note(), m_categoryComboBox->currentData().toString(), m_sourceImage);
 }
 
 void AddTransactionDialog::showSaveError(const QString &message)
@@ -214,3 +222,18 @@ void AddTransactionDialog::completeSave()
 {
     QDialog::accept();
 }
+
+void AddTransactionDialog::setBrands(const QList<BrandEntry> &brands,qint64 selectedId)
+{
+    m_brands=brands;
+    if (!m_brandCombo) { m_brandCombo=new ModernComboBox(this); m_brandCombo->setObjectName("purchaseBrandComboBox"); m_form->addRow(QStringLiteral("购买品牌（可选）"),m_brandCombo); }
+    refreshBrands(); m_brandCombo->setCurrentIndex(qMax(0,m_brandCombo->findData(selectedId)));
+}
+void AddTransactionDialog::refreshBrands()
+{
+    if (!m_brandCombo) return;
+    const auto selected=m_brandCombo->currentData().toLongLong(); m_brandCombo->clear(); m_brandCombo->addItem(QStringLiteral("未选择品牌"),qint64(0));
+    for (const auto &brand:m_brands) if (brand.active && brand.category==m_categoryComboBox->currentData().toString()) m_brandCombo->addItem(QStringLiteral("%1 · 权重 %2").arg(brand.name).arg(brand.weight),brand.id);
+    m_brandCombo->setCurrentIndex(qMax(0,m_brandCombo->findData(selected)));
+}
+qint64 AddTransactionDialog::selectedBrandId() const { return m_brandCombo?m_brandCombo->currentData().toLongLong():0; }

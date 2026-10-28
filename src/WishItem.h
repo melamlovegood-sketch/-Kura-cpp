@@ -14,6 +14,8 @@ struct WishItem
     int coolingDays = 3;
     int priority = 2; // 1 high, 2 medium, 3 low.
     QString reason;
+    QString detailCategory;
+    QByteArray sourceImage;
     QDateTime createdAt;
     QDateTime readyAt;
     WishStatus status = WishStatus::Waiting;

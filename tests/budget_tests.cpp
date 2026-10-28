@@ -234,7 +234,7 @@ void BudgetTests::widgetCrudAndRestart()
     const QDate month = MonthlyBudget::firstDay(QDate::currentDate());
     const QDate next = month.addMonths(1);
     {
-        MainWindow window(path);
+        MainWindow window(path); window.showPage(MainWindow::Page::Billing);
         window.show();
         settle();
         auto *amount = window.findChild<QDoubleSpinBox *>(QStringLiteral("budgetAmountSpinBox"));
@@ -269,7 +269,8 @@ void BudgetTests::widgetCrudAndRestart()
         QCOMPARE(spent->text(), QStringLiteral("已消费：¥125.00"));
         QCOMPARE(remaining->text(), QStringLiteral("剩余额度：-¥25.00"));
         QVERIFY(status->text().contains(QStringLiteral("已超支 ¥25.00")));
-        QVERIFY(status->styleSheet().contains(QStringLiteral("#b42318")));
+        const auto warningColor = status->palette().color(QPalette::WindowText);
+        QVERIFY(warningColor.red() > warningColor.green() * 1.5);
         const QString preview = qEnvironmentVariable("KURA_PREVIEW_DIR");
         if (!preview.isEmpty()) {
             QVERIFY(QDir().mkpath(preview));
@@ -308,7 +309,7 @@ void BudgetTests::widgetCrudAndRestart()
         QCOMPARE(spent->text(), QStringLiteral("已消费：¥0.00"));
         QCOMPARE(remaining->text(), QStringLiteral("剩余额度：¥130.00"));
     }
-    MainWindow restarted(path);
+    MainWindow restarted(path); restarted.showPage(MainWindow::Page::Billing);
     restarted.show();
     settle();
     QCOMPARE(restarted.findChild<QLabel *>(QStringLiteral("budgetLimitLabel"))->text(), QStringLiteral("预算：¥100.00"));
@@ -319,7 +320,7 @@ void BudgetTests::widgetCrudAndRestart()
 
 void BudgetTests::widgetZeroAndPrecision()
 {
-    MainWindow window(QStringLiteral(":memory:"));
+    MainWindow window(QStringLiteral(":memory:")); window.showPage(MainWindow::Page::Billing);
     window.show();
     settle();
     auto *amount = window.findChild<QDoubleSpinBox *>(QStringLiteral("budgetAmountSpinBox"));
@@ -352,7 +353,8 @@ void BudgetTests::widgetFailureKeepsDraftAndMonth()
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
     const QString path = directory.filePath(QStringLiteral("widget-failure.sqlite"));
-    MainWindow window(path);
+    MainWindow window(path); window.showPage(MainWindow::Page::Billing);
+    window.findChild<QPushButton *>("billingEditBudgetButton")->click();
     window.show();
     settle();
     auto *amount = window.findChild<QDoubleSpinBox *>(QStringLiteral("budgetAmountSpinBox"));
@@ -402,7 +404,7 @@ void BudgetTests::unavailableDatabaseDisablesBudget()
 {
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
-    MainWindow window(directory.path());
+    MainWindow window(directory.path()); window.showPage(MainWindow::Page::Billing);
     QVERIFY(!window.findChild<QPushButton *>(QStringLiteral("saveBudgetButton"))->isEnabled());
     QVERIFY(!window.findChild<QDateEdit *>(QStringLiteral("budgetMonthEdit"))->isEnabled());
     QCOMPARE(window.findChild<QLabel *>(QStringLiteral("budgetSpentLabel"))->text(), QStringLiteral("已消费：—"));

@@ -17,6 +17,7 @@ public:
     explicit StatisticsWidget(QWidget *parent = nullptr);
     bool setTransactions(const QList<Transaction> &records);
     void showLoadError(const QString &message);
+    void setMonth(const QDate &month);
 
 signals:
     void monthActivated(const QDate &month);

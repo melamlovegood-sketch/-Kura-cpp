@@ -1,11 +1,12 @@
 #include "Transaction.h"
+#include "CategoryCatalog.h"
 
 Transaction::Transaction(qint64 id, const QString &description, qint64 amountCents,
                          const QString &category, const QDate &date,
-                         const QTime &time, const QString &note)
+                         const QTime &time, const QString &note, const QString &detailCategory, const QByteArray &sourceImage)
     : m_id(id), m_description(description.trimmed()), m_amountCents(amountCents),
       m_category(category), m_date(date), m_time(time.isValid() ? QTime(time.hour(), time.minute(), time.second()) : QTime()),
-      m_note(note)
+      m_note(note), m_detailCategory(detailCategory.isEmpty() ? CategoryCatalog::fromLegacy(category) : detailCategory), m_sourceImage(sourceImage)
 {
 }
 
@@ -17,6 +18,8 @@ QString Transaction::category() const { return m_category; }
 QDate Transaction::date() const { return m_date; }
 QTime Transaction::time() const { return m_time; }
 QString Transaction::note() const { return m_note; }
+QString Transaction::detailCategory() const { return m_detailCategory; }
+QByteArray Transaction::sourceImage() const { return m_sourceImage; }
 
 QString Transaction::validationError() const
 {
@@ -28,6 +31,10 @@ QString Transaction::validationError() const
         return QStringLiteral("金额须在 0.01 至 99,999,999.99 元之间。");
     if (!categories().contains(m_category))
         return QStringLiteral("请选择有效的消费分类。");
+    if (!CategoryCatalog::isValid(m_detailCategory) || CategoryCatalog::legacyCategory(m_detailCategory) != m_category)
+        return QStringLiteral("细分类与汇总分类不一致。");
+    if (m_sourceImage.size() > 2 * 1024 * 1024)
+        return QStringLiteral("截图过大，请选择较小图片。");
     if (!m_date.isValid() || m_date.year() < 1 || m_date.year() > 9999)
         return QStringLiteral("请选择有效的消费日期。");
     if (m_note.size() > MaximumNoteLength)

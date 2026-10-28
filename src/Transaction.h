@@ -4,6 +4,7 @@
 #include <QTime>
 #include <QString>
 #include <QStringList>
+#include <QByteArray>
 
 class Transaction
 {
@@ -13,7 +14,8 @@ public:
 
     Transaction(qint64 id, const QString &description, qint64 amountCents,
                 const QString &category, const QDate &date,
-                const QTime &time = {}, const QString &note = {});
+                const QTime &time = {}, const QString &note = {},
+                const QString &detailCategory = {}, const QByteArray &sourceImage = {});
 
     qint64 id() const;
     QString description() const;
@@ -23,6 +25,8 @@ public:
     QDate date() const;
     QTime time() const; // Invalid means the original record did not include a time.
     QString note() const;
+    QString detailCategory() const;
+    QByteArray sourceImage() const;
 
     QString validationError() const;
     static QStringList categories();
@@ -36,4 +40,6 @@ private:
     QDate m_date;
     QTime m_time;
     QString m_note;
+    QString m_detailCategory;
+    QByteArray m_sourceImage;
 };

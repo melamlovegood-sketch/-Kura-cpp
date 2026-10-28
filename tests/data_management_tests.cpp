@@ -1,3 +1,4 @@
+#include <QStackedWidget>
 #include "CsvExporter.h"
 #include "DataManagementWidget.h"
 #include "DatabaseBackupService.h"
@@ -248,7 +249,7 @@ void DataManagementTests::filterExportAndRestoreUi()
     QTemporaryDir directory;
     const QString path = directory.filePath(QStringLiteral("ui.sqlite"));
     { DatabaseManager database(path); QVERIFY(database.initialize()); QVERIFY(seed(database)); }
-    MainWindow window(path); window.show(); settle();
+    MainWindow window(path); window.showPage(MainWindow::Page::Billing); window.show(); settle();
     auto *widget = window.findChild<DataManagementWidget *>(); QVERIFY(widget);
     auto *category = window.findChild<QComboBox *>(QStringLiteral("categoryFilter"));
     category->setCurrentText(QStringLiteral("购物"));
@@ -270,14 +271,15 @@ void DataManagementTests::filterExportAndRestoreUi()
     QVERIFY(widget->backupTo(backup));
     QVERIFY(widget->requestRestore(backup)); settle();
     auto *confirmation = window.findChild<QMessageBox *>(QStringLiteral("restoreConfirmationDialog"));
-    QVERIFY(confirmation); QVERIFY(confirmation->text().contains(QStringLiteral("消费 2 笔，预算 1 个月，愿望 1 条")));
+    QVERIFY(confirmation); QVERIFY(confirmation->text().contains(QStringLiteral("全部业务数据")));
+    QVERIFY(confirmation->detailedText().contains(QStringLiteral("消费 2 笔，预算 1 个月，愿望 1 条")));
     QCOMPARE(static_cast<QAbstractButton *>(confirmation->defaultButton()), confirmation->button(QMessageBox::No));
     confirmation->button(QMessageBox::No)->click(); settle();
     QCOMPARE(category->currentText(), QStringLiteral("购物"));
     window.findChild<QPushButton *>(QStringLiteral("addTransactionButton"))->click(); settle();
     QVERIFY(!widget->requestRestore(backup));
     auto *editor = window.findChild<AddTransactionDialog *>(); QVERIFY(editor); editor->reject(); settle();
-    auto *pages = window.findChild<QTabWidget *>(QStringLiteral("mainPages")); pages->setCurrentIndex(3);
+    auto *pages = window.findChild<QStackedWidget *>(QStringLiteral("mainPages")); pages->setCurrentIndex(3);
     const QString preview = qEnvironmentVariable("KURA_PREVIEW_DIR");
     if (!preview.isEmpty()) { QVERIFY(QDir().mkpath(preview)); QVERIFY(window.grab().save(preview + QStringLiteral("/data-management.png"))); }
     QVERIFY(widget->requestRestore(backup)); settle();
@@ -286,9 +288,10 @@ void DataManagementTests::filterExportAndRestoreUi()
     confirmation->button(QMessageBox::Yes)->click(); settle();
     QCOMPARE(category->currentIndex(), 0);
     QCOMPARE(window.findChild<QTableWidget *>(QStringLiteral("transactionTable"))->rowCount(), 2);
+    window.findChild<QComboBox *>(QStringLiteral("wishlistStatusFilter"))->setCurrentIndex(0); // Verify restored history, beyond the default pending list.
     QCOMPARE(window.findChild<QTableWidget *>(QStringLiteral("wishlistTable"))->rowCount(), 1);
     QVERIFY(window.findChild<QLabel *>(QStringLiteral("dataManagementResultLabel"))->text().contains(QStringLiteral("数据已恢复")));
-    MainWindow failed(directory.path());
+    MainWindow failed(directory.path()); failed.showPage(MainWindow::Page::Billing);
     QVERIFY(!failed.findChild<QPushButton *>(QStringLiteral("exportCsvButton"))->isEnabled());
 }
 

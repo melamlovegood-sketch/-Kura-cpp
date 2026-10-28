@@ -1,5 +1,13 @@
 # Kura C++ 实现说明
 
+0.12.0 增加原生 ZIP／OOXML 读取与 CSV 编码解析、BillImportRepository 和后台预览界面、MonthlyReviewRepository 与月度页面。SupplementSchema 同时用于升级、备份核验和恢复字段。导入以稳定索引加事务保证判重，删除消费保留索引墓碑；月度事实指纹覆盖相关记录与预算，生成后核对再保存。AIService 增加结构化分类和故事通道。详见 IMPORT_MONTHLY_REVIEW.md。
+
+0.11.0 新增 WorkflowSchema、ShoppingProfileRepository、ExecutionRepository、PurchaseRepository、ReviewRepository 和 PriceRepository，以及对应原生 Qt 页面。SQLite 保存点支持购买、复盘安排、会话结束和品牌反馈的原子提交及嵌套操作。WorkflowSchema 同时供升级、备份结构核验与恢复字段列表使用，避免新表遗漏。AIService 增加纯文本分析通道，仍复用既有鉴权、超时、取消和响应边界。完整业务规则见 WORKFLOW_PHASE3.md。
+
+0.10.0 新增 CategoryCatalog、DecisionSchema、WishPoolRepository、AISettings／AIService、DecisionDialog 和 WishPoolWidget。保留六类汇总并增加细分类映射，两项预算与合计同次写入。截图用 BLOB 随业务记录保存；目标和忍住记录分表持久化，暂存金额在设置目标的事务中归集。购买／放弃／删除愿望时同时关闭对应目标；完整备份恢复覆盖五张业务表。AI 通过异步 Qt Network 请求配置的兼容接口，输出先校验并供用户修改，只有明确选择才持久化。密钥使用当前 Windows 用户的 DPAPI，与业务备份分离。完整规则见 DECISION_FLOW.md。
+
+0.9.0 新增 HomeWidget、AppearanceWidget 和 ShellWidgets，用 QStackedWidget 管理既有业务页面和新增页面。MainWindow 提供固定页头、底部导航和首页购买入口；AppTheme 统一三套主题及原生矢量图标。业务对象继续保留，切换页面与主题不会重建表单。设置通过独立 INI 文件保存。完整范围见 UI_REFRESH.md；以下为既有业务实现说明。
+
 程序用 C++17 与 Qt Widgets 实现本地消费记录、预算、趋势和延迟购买流程，Qt SQL 访问 SQLite。没有 Web 前端或云服务。
 
 | 层次 | 组件 | 职责 |

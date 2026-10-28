@@ -1,3 +1,5 @@
+#include <QAction>
+#include <QStackedWidget>
 #include "WishlistRepository.h"
 #include "WishlistWidget.h"
 #include "WishDialog.h"
@@ -282,9 +284,10 @@ void WishlistTests::dialogCrudAndRestart()
     QTemporaryDir directory;
     const QString path = directory.filePath(QStringLiteral("ui.sqlite"));
     {
-        MainWindow window(path);
+        MainWindow window(path); window.showPage(MainWindow::Page::Billing);
         window.show();
-        window.findChild<QTabWidget *>(QStringLiteral("mainPages"))->setCurrentIndex(2);
+        window.findChild<QStackedWidget *>(QStringLiteral("mainPages"))->setCurrentIndex(2);
+        window.findChild<QComboBox *>(QStringLiteral("wishlistStatusFilter"))->setCurrentIndex(0); // This lifecycle test also inspects completed history.
         settle();
         auto *table = window.findChild<QTableWidget *>(QStringLiteral("wishlistTable"));
         QVERIFY(!button(window, "purchaseWishButton")->isEnabled());
@@ -307,7 +310,7 @@ void WishlistTests::dialogCrudAndRestart()
         const qint64 id = table->item(0, 0)->data(Qt::UserRole).toLongLong();
         table->selectRow(0);
         QVERIFY(!button(window, "purchaseWishButton")->isEnabled());
-        button(window, "editWishButton")->click();
+        window.findChild<QAction *>("editWishAction")->trigger();
         settle();
         dialog = window.findChild<WishDialog *>();
         QVERIFY(dialog);
@@ -315,7 +318,7 @@ void WishlistTests::dialogCrudAndRestart()
         button(*dialog, "cancelWishButton")->click();
         settle();
         QCOMPARE(table->item(0, 0)->text(), QStringLiteral("耳机"));
-        button(window, "editWishButton")->click();
+        window.findChild<QAction *>("editWishAction")->trigger();
         settle();
         dialog = window.findChild<WishDialog *>();
         QVERIFY(dialog);
@@ -324,31 +327,32 @@ void WishlistTests::dialogCrudAndRestart()
         settle();
         QCOMPARE(table->item(0, 0)->text(), QStringLiteral("键盘"));
         QCOMPARE(table->item(0, 0)->data(Qt::UserRole).toLongLong(), id);
-        button(window, "abandonWishButton")->click();
+        window.findChild<QAction *>("abandonWishAction")->trigger();
         settle();
         auto *confirmation = window.findChild<QMessageBox *>();
         QVERIFY(confirmation);
         QCOMPARE(static_cast<QAbstractButton *>(confirmation->defaultButton()), confirmation->button(QMessageBox::No));
         confirmation->button(QMessageBox::No)->click();
         settle();
-        QVERIFY(button(window, "abandonWishButton")->isEnabled());
-        button(window, "abandonWishButton")->click();
+        QVERIFY(window.findChild<QAction *>("abandonWishAction")->isEnabled());
+        window.findChild<QAction *>("abandonWishAction")->trigger();
         settle();
         confirmation = window.findChild<QMessageBox *>();
         QVERIFY(confirmation);
         confirmation->button(QMessageBox::Yes)->click();
         settle();
         QCOMPARE(table->item(0, 3)->text(), QStringLiteral("已放弃"));
-        QVERIFY(text(window, "wishlistSummaryLabel").contains(QStringLiteral("¥180.00")));
+        QVERIFY(window.findChild<QLabel *>(QStringLiteral("wishlistSummaryLabel"))->toolTip().contains(QStringLiteral("¥180.00")));
         QCOMPARE(window.findChild<QTableWidget *>(QStringLiteral("transactionTable"))->rowCount(), 0);
-        QVERIFY(!button(window, "editWishButton")->isEnabled());
+        QVERIFY(!window.findChild<QAction *>("editWishAction")->isEnabled());
     }
-    MainWindow restarted(path);
+    MainWindow restarted(path); restarted.showPage(MainWindow::Page::Billing);
+    restarted.findChild<QComboBox *>(QStringLiteral("wishlistStatusFilter"))->setCurrentIndex(0);
     auto *table = restarted.findChild<QTableWidget *>(QStringLiteral("wishlistTable"));
     QCOMPARE(table->rowCount(), 1);
     QCOMPARE(table->item(0, 3)->text(), QStringLiteral("已放弃"));
     table->selectRow(0);
-    button(restarted, "deleteWishButton")->click();
+    restarted.findChild<QAction *>("deleteWishAction")->trigger();
     settle();
     auto *confirmation = restarted.findChild<QMessageBox *>();
     QVERIFY(confirmation);
@@ -406,9 +410,10 @@ void WishlistTests::purchaseUpdatesWindow()
     BudgetRepository budgets(database);
     QVERIFY(budgets.save(MonthlyBudget(QDate::currentDate(), 20000)));
     {
-        MainWindow window(path);
+        MainWindow window(path); window.showPage(MainWindow::Page::Billing);
         window.show();
-        window.findChild<QTabWidget *>(QStringLiteral("mainPages"))->setCurrentIndex(2);
+        window.findChild<QStackedWidget *>(QStringLiteral("mainPages"))->setCurrentIndex(2);
+        window.findChild<QComboBox *>(QStringLiteral("wishlistStatusFilter"))->setCurrentIndex(0);
         window.findChild<QSpinBox *>(QStringLiteral("statisticsYearSpinBox"))->setValue(QDate::currentDate().year());
         settle();
         auto *table = window.findChild<QTableWidget *>(QStringLiteral("wishlistTable"));
@@ -446,8 +451,9 @@ void WishlistTests::purchaseUpdatesWindow()
         QCOMPARE(text(window, "budgetRemainingLabel"), QStringLiteral("剩余额度：-¥50.00"));
         QVERIFY(text(window, "yearExpenseLabel").contains(QStringLiteral("¥250.00")));
     }
-    MainWindow restarted(path);
+    MainWindow restarted(path); restarted.showPage(MainWindow::Page::Billing);
     QCOMPARE(text(restarted, "totalExpenseLabel"), QStringLiteral("全部支出：¥250.00"));
+    restarted.findChild<QComboBox *>(QStringLiteral("wishlistStatusFilter"))->setCurrentIndex(0);
     auto *expenses = restarted.findChild<QTableWidget *>(QStringLiteral("transactionTable"));
     QCOMPARE(expenses->item(0, 0)->text(), QDate::currentDate().toString(Qt::ISODate) + QStringLiteral(" 18:19:20"));
     QCOMPARE(expenses->item(0, 4)->text(), QStringLiteral("购买后补充的消费备注"));
@@ -467,6 +473,7 @@ void WishlistTests::widgetFailuresAndRetry()
     WishlistWidget widget(database);
     widget.show();
     widget.setDatabaseAvailable(true);
+    widget.findChild<QComboBox *>(QStringLiteral("wishlistStatusFilter"))->setCurrentIndex(0);
     auto *table = widget.findChild<QTableWidget *>(QStringLiteral("wishlistTable"));
     table->selectRow(0);
     QSqlQuery query(database.database());
@@ -508,7 +515,7 @@ void WishlistTests::widgetFailuresAndRetry()
     QVERIFY(widget.refresh());
     QCOMPARE(table->rowCount(), 0);
     QVERIFY(widget.findChild<QLabel *>(QStringLiteral("wishlistErrorLabel"))->isHidden());
-    MainWindow failed(directory.path());
+    MainWindow failed(directory.path()); failed.showPage(MainWindow::Page::Billing);
     QVERIFY(!button(failed, "addWishButton")->isEnabled());
     QCOMPARE(text(failed, "wishlistSummaryLabel"), QStringLiteral("愿望数据：—"));
 }

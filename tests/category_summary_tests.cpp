@@ -1,3 +1,4 @@
+#include "CategoryCatalog.h"
 #include "CategorySummary.h"
 #include "ExpenseSummary.h"
 #include "AddTransactionDialog.h"
@@ -30,7 +31,7 @@ void fill(AddTransactionDialog *dialog, const QString &category, double amount, 
 {
     dialog->findChild<QLineEdit *>("descriptionEdit")->setText(QStringLiteral("测试消费"));
     dialog->findChild<QDoubleSpinBox *>("amountSpinBox")->setValue(amount);
-    dialog->findChild<QComboBox *>("categoryComboBox")->setCurrentText(category);
+    dialog->findChild<QComboBox *>("categoryComboBox")->setCurrentText(CategoryCatalog::label(CategoryCatalog::fromLegacy(category)));
     dialog->findChild<QDateEdit *>("dateEdit")->setDate(date);
 }
 }
@@ -209,7 +210,7 @@ void CategorySummaryTests::arbitraryMonthAndPercentageFormatting()
 
 void CategorySummaryTests::refreshWithCrudAndFilters()
 {
-    MainWindow window(QStringLiteral(":memory:"));
+    MainWindow window(QStringLiteral(":memory:")); window.showPage(MainWindow::Page::Billing);
     window.show();
     settle();
     auto *summary = window.findChild<QTableWidget *>("categorySummaryTable");
@@ -285,7 +286,7 @@ void CategorySummaryTests::loadFailurePreservesSummary()
     TransactionRepository repository(database);
     Transaction record(0, "A", 100, QStringLiteral("餐饮"), QDate::currentDate());
     QVERIFY(repository.add(record));
-    MainWindow window(path);
+    MainWindow window(path); window.showPage(MainWindow::Page::Billing);
     auto *summary = window.findChild<QTableWidget *>("categorySummaryTable");
     QCOMPARE(summary->item(0, 1)->text(), QStringLiteral("¥1.00"));
     QSqlQuery query(database.database());
@@ -293,7 +294,7 @@ void CategorySummaryTests::loadFailurePreservesSummary()
     QVERIFY(!window.reloadTransactions());
     QCOMPARE(summary->item(0, 1)->text(), QStringLiteral("¥1.00"));
     QCOMPARE(window.findChild<QLabel *>("monthExpenseLabel")->text(), QStringLiteral("本月支出：¥1.00"));
-    MainWindow failed(directory.path());
+    MainWindow failed(directory.path()); failed.showPage(MainWindow::Page::Billing);
     QCOMPARE(failed.findChild<QTableWidget *>("categorySummaryTable")->item(0, 1)->text(), QStringLiteral("—"));
 }
 
@@ -313,7 +314,7 @@ void CategorySummaryTests::preview()
         {0, QStringLiteral("上月购物"), 9900, QStringLiteral("购物"), today.addMonths(-1)}};
     for (auto &row : rows)
         QVERIFY(repository.add(row));
-    MainWindow window(path);
+    MainWindow window(path); window.showPage(MainWindow::Page::Billing);
     window.show();
     settle();
     const auto previewDir = qEnvironmentVariable("KURA_PREVIEW_DIR");

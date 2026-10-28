@@ -1,5 +1,10 @@
+#include "WorkflowStorage.h"
+#include "ProductRepository.h"
 #include "WishlistRepository.h"
+#include "UnifiedWishlistRepository.h"
 #include "DatabaseManager.h"
+#include "CategoryCatalog.h"
+#include "ReviewRepository.h"
 #include "TransactionRepository.h"
 #include <QSqlError>
 #include <QSqlQuery>
@@ -26,6 +31,8 @@ void bindInput(QSqlQuery &query, const WishItem &item)
     query.bindValue(QStringLiteral(":category"), item.category);
     query.bindValue(QStringLiteral(":days"), item.coolingDays);
     query.bindValue(QStringLiteral(":priority"), item.priority);
+    query.bindValue(QStringLiteral(":detail"), item.detailCategory.isEmpty() ? CategoryCatalog::fromLegacy(item.category) : item.detailCategory);
+    query.bindValue(QStringLiteral(":image"), item.sourceImage.isNull() ? QByteArray("") : item.sourceImage);
     const QString reason = item.reason.trimmed();
     // An omitted optional QString must be stored as empty text, not SQL NULL.
     query.bindValue(QStringLiteral(":reason"), reason.isNull() ? QStringLiteral("") : reason);
@@ -43,7 +50,7 @@ bool WishlistRepository::connectionReady()
     return false;
 }
 
-bool WishlistRepository::add(WishItem &item, const QDateTime &now)
+bool WishlistRepository::add(WishItem &item, const QDateTime &now,qint64 productId)
 {
     m_lastError = item.inputError();
     if (!m_lastError.isEmpty())
@@ -53,6 +60,7 @@ bool WishlistRepository::add(WishItem &item, const QDateTime &now)
         return false;
     }
     if (!connectionReady()) return false;
+    WorkflowStorage::Transaction productWrite(m_database.database(),m_lastError); if (!productWrite.ok()) return false;
     WishItem saved = item;
     saved.name = saved.name.trimmed();
     saved.reason = saved.reason.trimmed();
@@ -63,7 +71,7 @@ bool WishlistRepository::add(WishItem &item, const QDateTime &now)
     saved.transactionId = 0;
     QSqlQuery query(m_database.database());
     query.prepare(QStringLiteral("INSERT INTO wishlist(name, estimated_cents, category, cooling_days, reason, "
-        "created_ms, ready_ms, status,priority) VALUES(:name,:amount,:category,:days,:reason,:created,:ready,0,:priority)"));
+        "created_ms, ready_ms, status,priority,detail_category,source_image) VALUES(:name,:amount,:category,:days,:reason,:created,:ready,0,:priority,:detail,:image)"));
     bindInput(query, saved);
     query.bindValue(QStringLiteral(":created"), saved.createdAt.toMSecsSinceEpoch());
     query.bindValue(QStringLiteral(":ready"), saved.readyAt.toMSecsSinceEpoch());
@@ -71,7 +79,10 @@ bool WishlistRepository::add(WishItem &item, const QDateTime &now)
         m_lastError = queryError(query.lastError());
         return false;
     }
-    saved.id = query.lastInsertId().toLongLong();
+    saved.id = query.lastInsertId().toLongLong(); query.finish();
+    ProductRepository products(m_database);
+    if (productId && !products.attach("wish",saved.id,productId)) { m_lastError=products.lastError(); return false; }
+    if (!productWrite.commit()) return false;
     item = saved;
     return true;
 }
@@ -87,9 +98,10 @@ bool WishlistRepository::update(const WishItem &item, const QDateTime &now)
         return false;
     }
     if (!connectionReady()) return false;
+    WorkflowStorage::Transaction write(m_database.database(),m_lastError); if (!write.ok()) return false;
     QSqlQuery query(m_database.database());
     query.prepare(QStringLiteral("UPDATE wishlist SET name=:name,estimated_cents=:amount,category=:category,"
-        "cooling_days=:days,priority=:priority,reason=:reason,ready_ms=:ready WHERE id=:id AND status=0 AND created_ms<=:now"));
+        "cooling_days=:days,priority=:priority,reason=:reason,detail_category=:detail,source_image=:image,ready_ms=:ready WHERE id=:id AND status=0 AND created_ms<=:now"));
     bindInput(query, item);
     query.bindValue(QStringLiteral(":id"), item.id);
     query.bindValue(QStringLiteral(":ready"), ready.toMSecsSinceEpoch());
@@ -102,7 +114,11 @@ bool WishlistRepository::update(const WishItem &item, const QDateTime &now)
         m_lastError = QStringLiteral("愿望已不存在、已经完成，或系统时间早于创建时间。请刷新后重试。");
         return false;
     }
-    return true;
+    query.finish();
+    query.prepare("UPDATE price_tracks SET name=:name,name_key=:key,detail_category=:category WHERE id IN (SELECT id FROM wishlist_price_links WHERE wish_id=:wish)");
+    query.bindValue(":name",item.name.trimmed()); query.bindValue(":key",WorkflowStorage::nameKey(item.name)); query.bindValue(":category",item.detailCategory.isEmpty()?CategoryCatalog::fromLegacy(item.category):item.detailCategory); query.bindValue(":wish",item.id);
+    if (!query.exec()) { m_lastError=queryError(query.lastError()); return false; } query.finish();
+    return write.commit();
 }
 
 bool WishlistRepository::remove(qint64 id)
@@ -113,17 +129,27 @@ bool WishlistRepository::remove(qint64 id)
         return false;
     }
     if (!connectionReady()) return false;
-    QSqlQuery query(m_database.database());
+    auto connection = m_database.database();
+    if (!connection.transaction()) { m_lastError = queryError(connection.lastError()); return false; }
+    QSqlQuery query(connection);
     query.prepare(QStringLiteral("DELETE FROM wishlist WHERE id=:id"));
     query.bindValue(QStringLiteral(":id"), id);
     if (!query.exec()) {
         m_lastError = queryError(query.lastError());
-        return false;
+        query.finish(); connection.rollback(); return false;
     }
     if (query.numRowsAffected() != 1) {
         m_lastError = QStringLiteral("这条愿望已不存在，请刷新后重试。");
-        return false;
+        query.finish(); connection.rollback(); return false;
     }
+    query.finish();
+    query.prepare(QStringLiteral("UPDATE wish_pools SET closed_ms=MAX(:now,created_ms) WHERE wish_id=:id AND closed_ms IS NULL"));
+    query.bindValue(":id", id); query.bindValue(":now", QDateTime::currentMSecsSinceEpoch());
+    if (!query.exec()) { m_lastError = queryError(query.lastError()); query.finish(); connection.rollback(); return false; }
+    query.finish();
+    UnifiedWishlistRepository catalog(m_database);
+    if (!catalog.closeWish(id,true)) { m_lastError=catalog.lastError(); connection.rollback(); return false; }
+    if (!connection.commit()) { m_lastError = queryError(connection.lastError()); connection.rollback(); return false; }
     return true;
 }
 
@@ -135,23 +161,33 @@ bool WishlistRepository::abandon(qint64 id, const QDateTime &now)
         return false;
     }
     if (!connectionReady()) return false;
-    QSqlQuery query(m_database.database());
+    auto connection = m_database.database();
+    if (!connection.transaction()) { m_lastError = queryError(connection.lastError()); return false; }
+    QSqlQuery query(connection);
     query.prepare(QStringLiteral("UPDATE wishlist SET status=2,closed_ms=:now "
                                  "WHERE id=:id AND status=0 AND created_ms<=:now"));
     query.bindValue(QStringLiteral(":id"), id);
     query.bindValue(QStringLiteral(":now"), now.toMSecsSinceEpoch());
     if (!query.exec()) {
         m_lastError = queryError(query.lastError());
-        return false;
+        query.finish(); connection.rollback(); return false;
     }
     if (query.numRowsAffected() != 1) {
         m_lastError = QStringLiteral("愿望已不存在、已经完成，或系统时间早于创建时间。请刷新后重试。");
-        return false;
+        query.finish(); connection.rollback(); return false;
     }
+    query.finish();
+    query.prepare(QStringLiteral("UPDATE wish_pools SET closed_ms=MAX(:now,created_ms) WHERE wish_id=:id AND closed_ms IS NULL"));
+    query.bindValue(":id", id); query.bindValue(":now", QDateTime::currentMSecsSinceEpoch());
+    if (!query.exec()) { m_lastError = queryError(query.lastError()); query.finish(); connection.rollback(); return false; }
+    query.finish();
+    UnifiedWishlistRepository catalog(m_database);
+    if (!catalog.closeWish(id)) { m_lastError=catalog.lastError(); connection.rollback(); return false; }
+    if (!connection.commit()) { m_lastError = queryError(connection.lastError()); connection.rollback(); return false; }
     return true;
 }
 
-bool WishlistRepository::purchase(qint64 id, Transaction &expense, const QDateTime &now)
+bool WishlistRepository::purchase(qint64 id, Transaction &expense, const QDateTime &now, qint64 brandId)
 {
     m_lastError = expense.validationError();
     if (!m_lastError.isEmpty())
@@ -199,6 +235,16 @@ bool WishlistRepository::purchase(qint64 id, Transaction &expense, const QDateTi
         return false;
     }
     link.finish();
+    link.prepare(QStringLiteral("UPDATE wish_pools SET closed_ms=MAX(:now,created_ms) WHERE wish_id=:id AND closed_ms IS NULL"));
+    link.bindValue(":id", id); link.bindValue(":now", now.toMSecsSinceEpoch());
+    if (!link.exec()) { m_lastError = queryError(link.lastError()); link.finish(); connection.rollback(); return false; }
+    link.finish();
+    ReviewRepository reviews(m_database);
+    if (!reviews.schedule(saved.id(),brandId)) { m_lastError=reviews.lastError(); connection.rollback(); return false; }
+    ProductRepository products(m_database);
+    if (!products.carry("wish",id,"transaction",saved.id())) { m_lastError=products.lastError(); connection.rollback(); return false; }
+    UnifiedWishlistRepository catalog(m_database);
+    if (!catalog.closeWish(id)) { m_lastError=catalog.lastError(); connection.rollback(); return false; }
     if (!connection.commit()) {
         m_lastError = queryError(connection.lastError());
         connection.rollback();
@@ -214,7 +260,7 @@ bool WishlistRepository::findAll(QList<WishItem> &items)
     if (!connectionReady()) return false;
     QSqlQuery query(m_database.database());
     if (!query.exec(QStringLiteral("SELECT id,name,estimated_cents,category,cooling_days,reason,"
-        "created_ms,ready_ms,status,closed_ms,transaction_id,priority FROM wishlist ORDER BY created_ms DESC,id DESC"))) {
+        "created_ms,ready_ms,status,closed_ms,transaction_id,priority,detail_category,source_image FROM wishlist ORDER BY created_ms DESC,id DESC"))) {
         m_lastError = queryError(query.lastError());
         return false;
     }
@@ -234,6 +280,9 @@ bool WishlistRepository::findAll(QList<WishItem> &items)
             item.closedAt = QDateTime::fromMSecsSinceEpoch(query.value(9).toLongLong()).toUTC();
         item.transactionId = query.value(10).toLongLong();
         item.priority = query.value(11).toInt();
+        item.detailCategory = query.value(12).toString();
+        if (item.detailCategory.isEmpty()) item.detailCategory = CategoryCatalog::fromLegacy(item.category);
+        item.sourceImage = query.value(13).toByteArray();
         if (item.id <= 0 || !item.validationError().isEmpty()) {
             m_lastError = QStringLiteral("数据库中编号 %1 的愿望无效，请检查数据文件。").arg(item.id);
             return false;

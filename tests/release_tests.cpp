@@ -1,3 +1,4 @@
+#include <QStackedWidget>
 #include "DemoData.h"
 #include "DatabaseManager.h"
 #include "WishlistRepository.h"
@@ -99,9 +100,9 @@ void ReleaseTests::responsivePagesAndPreviews()
     QTemporaryDir directory;
     const QString path=directory.filePath(QStringLiteral("preview.sqlite"));
     { DatabaseManager database(path); QVERIFY(database.initialize()); QString error; QVERIFY(DemoData::populate(database,error)); }
-    MainWindow window(path); window.resize(1180,860); window.show(); settle();
-    auto *pages=window.findChild<QTabWidget *>(QStringLiteral("mainPages"));
-    QCOMPARE(pages->count(),4);
+    MainWindow window(path); window.findChild<QTabWidget *>("reviewSectionsTabs")->setCurrentIndex(2); window.showPage(MainWindow::Page::Billing); window.resize(1180,860); window.show(); settle();
+    auto *pages=window.findChild<QStackedWidget *>(QStringLiteral("mainPages"));
+    QCOMPARE(pages->count(),7);
     auto *categories=window.findChild<QTableWidget *>(QStringLiteral("categorySummaryTable"));
     QCOMPARE(categories->rowCount(),6);
     qint64 total=0; for (int row=0;row<6;++row) total += categories->item(row,1)->data(Qt::UserRole).toLongLong();
@@ -109,7 +110,7 @@ void ReleaseTests::responsivePagesAndPreviews()
     const QString preview=qEnvironmentVariable("KURA_PREVIEW_DIR");
     if (!preview.isEmpty()) QVERIFY(QDir().mkpath(preview));
     const QStringList names={QStringLiteral("release-bookkeeping"),QStringLiteral("release-statistics"),QStringLiteral("release-wishlist"),QStringLiteral("release-data")};
-    for (int page=0;page<pages->count();++page) {
+    for (int page=0;page<names.size();++page) {
         pages->setCurrentIndex(page); settle();
         if (!preview.isEmpty()) QVERIFY(window.grab().save(preview+QStringLiteral("/")+names[page]+QStringLiteral(".png")));
     }

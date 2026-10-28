@@ -1,10 +1,14 @@
 #pragma once
 #include "WishlistRepository.h"
+#include "UnifiedWishlistRepository.h"
+#include "PriceRepository.h"
 #include <QWidget>
-class QTableWidget;
+class ProductList;
 class QComboBox;
 class QPushButton;
 class QLabel;
+class QAction;
+class QToolButton;
 
 class WishlistWidget : public QWidget
 {
@@ -13,10 +17,15 @@ public:
     explicit WishlistWidget(DatabaseManager &database, QWidget *parent = nullptr);
     void setDatabaseAvailable(bool available);
     bool refresh();
+    QPushButton *takeAddButton();
+    void showPrices(qint64 trackId=0);
     // Refresh countdowns from the cached snapshot; no disk writes or network work.
     void refreshCountdowns(const QDateTime &now = QDateTime::currentDateTimeUtc());
 signals:
     void expenseRecorded(qint64 transactionId);
+    void goalRequested(qint64 wishId);
+    void pricesChanged();
+    void settingsRequested();
 private:
     qint64 selectedId() const;
     const WishItem *selectedItem() const;
@@ -26,20 +35,37 @@ private:
     void purchaseSelected();
     void confirmSelected(bool removing);
     void showError(const QString &error);
+    void openPrices();
+    void adjustOrder();
+    void setSortMode(const QString &mode);
+    void sortItems(QList<const WishItem *> &items) const;
+    DatabaseManager &m_database;
     WishlistRepository m_repository;
+    UnifiedWishlistRepository m_catalog;
+    QHash<qint64,PriceTrack> m_prices;
+    QSet<qint64> m_legacyArchives;
+    QHash<qint64,qint64> m_positions;
+    QString m_sortMode=QStringLiteral("newest");
+    QAction *m_sortNewest,*m_sortOldest,*m_sortManual,*m_adjustOrder;
+    QPushButton *m_priceButton;
     QList<WishItem> m_items;
     bool m_available = false;
     bool m_hasSnapshot = false;
     QDateTime m_now;
-    QTableWidget *m_table;
+    ProductList *m_table;
     QComboBox *m_filter;
     QLabel *m_summary;
     QLabel *m_error;
     QLabel *m_empty;
+    QLabel *m_detailsText;
+    QWidget *m_addBar;
     QPushButton *m_add;
     QPushButton *m_refresh;
-    QPushButton *m_edit;
-    QPushButton *m_delete;
+    QToolButton *m_productMore;
+    QAction *m_pin;
+    QAction *m_edit;
+    QAction *m_delete;
+    QAction *m_abandonAction;
     QPushButton *m_purchase;
     QPushButton *m_abandon;
 };

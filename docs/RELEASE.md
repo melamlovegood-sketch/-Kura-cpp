@@ -1,10 +1,12 @@
 # Kura C++ Windows 运行包
 
-0.8.0 运行包包含 KuraCpp.exe、匹配的 Qt 和 MinGW 依赖、平台与 SQLite 插件、Demo.cmd、使用说明、演示步骤、测试与验收记录、示例截图。包内不包含个人数据库或测试程序。
+0.12.6 运行包包含 KuraCpp.exe、匹配的 Qt（含 Network）、Zlib 和 MinGW 依赖、平台与 SQLite／TLS 插件、Demo.cmd、虚构账单样例、使用说明、测试记录和页面截图。不含个人数据库、API Key 或测试程序。本次记账工作台见 BILLING_REFRESH.md，消费人格故事见 CONSUMER_PERSONALITIES.md，复盘界面见 REVIEW_REFRESH.md，导入与故事规则见 IMPORT_MONTHLY_REVIEW.md。
 
 ## 本次构建环境
 
-Windows 11 x64，MSYS2 UCRT64，GCC 15.2，Qt 6.10.1，CMake 和 Ninja。程序包使用 Release 构建；测试用独立临时数据库。
+0.12.3 清单简洁版见 PLANNING_REFRESH.md；运行包附带 `planning-*.png` 实际窗口截图。
+
+Windows 11 x64，MSYS2 UCRT64，GCC 15.2，Qt 6.10.1，CMake 和 Ninja；源码编译另需匹配 Kit 的 Zlib 开发库。程序包使用 Release 构建；测试用独立临时数据库。
 
 ## 重新构建与打包
 
@@ -22,7 +24,7 @@ MSYS2 的 moc 对中文路径有兼容问题，构建时用英文路径或指向
 ./scripts/Package-Windows.ps1 -Executable ./build-release/KuraCpp.exe -RuntimeDirectory C:/path/to/complete-runtime -LicenseDirectory C:/path/to/kit/licenses
 ```
 
-脚本在 `build/releases/KuraCpp-0.8.0-windows-x64` 下创建目录和 ZIP，并输出 SHA256。同版本目标已存在时停止，不自动删除或覆盖旧发布包。只复制 DLL、已知插件目录、文档、截图和构建好的程序，不复制源码目录中的 SQLite 数据。
+脚本在 `build/releases/KuraCpp-版本-windows-x64` 下创建目录和 ZIP，并输出 SHA256。同版本目标已存在时停止，不自动删除或覆盖旧发布包。只复制 DLL、已知插件目录、文档、截图和构建好的程序，不复制源码目录中的 SQLite 数据。
 
 ```powershell
 ./scripts/Measure-Code.ps1

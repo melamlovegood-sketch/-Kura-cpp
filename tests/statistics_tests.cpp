@@ -1,3 +1,4 @@
+#include <QStackedWidget>
 #include "ExpenseStatistics.h"
 #include "StatisticsWidget.h"
 #include "MonthlyTrendChart.h"
@@ -190,10 +191,10 @@ void StatisticsTests::mutationsFiltersAndRestart()
             QVERIFY(repository.add(record));
     }
     {
-        MainWindow window(path);
+        MainWindow window(path); window.findChild<QTabWidget *>("reviewSectionsTabs")->setCurrentIndex(2); window.showPage(MainWindow::Page::Billing);
         window.show();
         settle();
-        auto *pages = window.findChild<QTabWidget *>(QStringLiteral("mainPages"));
+        auto *pages = window.findChild<QStackedWidget *>(QStringLiteral("mainPages"));
         auto *year = window.findChild<QSpinBox *>(QStringLiteral("statisticsYearSpinBox"));
         auto *table = window.findChild<QTableWidget *>(QStringLiteral("transactionTable"));
         QCOMPARE(pages->currentIndex(), 0);
@@ -268,7 +269,7 @@ void StatisticsTests::mutationsFiltersAndRestart()
         year->setValue(2026);
         QCOMPARE(label(window, "yearExpenseLabel"), QStringLiteral("全年支出：¥12.50 · 2 笔"));
     }
-    MainWindow restarted(path);
+    MainWindow restarted(path); restarted.findChild<QTabWidget *>("reviewSectionsTabs")->setCurrentIndex(2); restarted.showPage(MainWindow::Page::Billing);
     restarted.findChild<QSpinBox *>(QStringLiteral("statisticsYearSpinBox"))->setValue(2025);
     QCOMPARE(label(restarted, "yearExpenseLabel"), QStringLiteral("全年支出：¥5.00 · 1 笔"));
     restarted.findChild<QSpinBox *>(QStringLiteral("statisticsYearSpinBox"))->setValue(2026);
@@ -285,7 +286,7 @@ void StatisticsTests::failuresPreserveSnapshot()
     TransactionRepository repository(database);
     auto record = expense(1000, QDate(2026, 1, 1));
     QVERIFY(repository.add(record));
-    MainWindow window(path);
+    MainWindow window(path); window.findChild<QTabWidget *>("reviewSectionsTabs")->setCurrentIndex(2); window.showPage(MainWindow::Page::Billing);
     auto *year = window.findChild<QSpinBox *>(QStringLiteral("statisticsYearSpinBox"));
     year->setValue(2026);
     QSqlQuery query(database.database());
@@ -299,7 +300,7 @@ void StatisticsTests::failuresPreserveSnapshot()
     QVERIFY(window.reloadTransactions());
     QCOMPARE(label(window, "yearExpenseLabel"), QStringLiteral("全年支出：¥0.00 · 0 笔"));
     QVERIFY(window.findChild<QLabel *>(QStringLiteral("statisticsErrorLabel"))->isHidden());
-    MainWindow failed(directory.path()); // A directory cannot be opened as SQLite.
+    MainWindow failed(directory.path()); failed.findChild<QTabWidget *>("reviewSectionsTabs")->setCurrentIndex(2); failed.showPage(MainWindow::Page::Billing); // A directory cannot be opened as SQLite.
     QVERIFY(!failed.findChild<QSpinBox *>(QStringLiteral("statisticsYearSpinBox"))->isEnabled());
     QVERIFY(!failed.findChild<QPushButton *>(QStringLiteral("viewStatisticsMonthButton"))->isEnabled());
     QCOMPARE(label(failed, "yearExpenseLabel"), QStringLiteral("全年支出：—"));
