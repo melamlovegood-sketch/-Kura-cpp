@@ -20,7 +20,7 @@ bool BillingAggregation::calculate(const QList<Transaction> &records,const QDate
         if (record.date()==today && !add(loaded.todayCents,record.amountCents())) return false;
         for (auto &point:loaded.trend) if (record.date().year()==point.month.year() && record.date().month()==point.month.month()) { if (!add(point.cents,record.amountCents())) return false; ++point.count; break; }
         if (record.date().year()!=month.year() || record.date().month()!=month.month()) continue;
-        if (!add(loaded.totalCents,record.amountCents()) || !add(CategoryCatalog::isBasic(record.detailCategory())?loaded.basicCents:loaded.discretionaryCents,record.amountCents())) return false;
+        if (!add(loaded.totalCents,record.amountCents()) || !add(record.isBasic()?loaded.basicCents:loaded.discretionaryCents,record.amountCents())) return false;
         auto &day=loaded.days[record.date().day()-1]; if (!add(day.cents,record.amountCents())) return false; ++day.count; loaded.records.append(record);
     }
     std::sort(loaded.records.begin(),loaded.records.end(),[](const Transaction &a,const Transaction &b) { if (a.date()!=b.date()) return a.date()>b.date(); if (a.time()!=b.time()) return a.time().isValid() && (!b.time().isValid() || a.time()>b.time()); return a.id()>b.id(); }); snapshot=loaded; return true;

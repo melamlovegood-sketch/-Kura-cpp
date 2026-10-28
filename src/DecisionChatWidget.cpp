@@ -72,7 +72,7 @@ public:
         document()->setMarkdown(markdown,QTextDocument::MarkdownFeatures(QTextDocument::MarkdownDialectGitHub)|QTextDocument::MarkdownNoHTML);
         for (auto block=document()->begin();block.isValid();block=block.next()) {
             QTextCursor cursor(block); auto format=block.blockFormat();
-            format.setLineHeight(145,QTextBlockFormat::ProportionalHeight); format.setBottomMargin(block.textList()?6:10);
+            format.setLineHeight(170,QTextBlockFormat::ProportionalHeight); format.setBottomMargin(block.textList()?8:14);
             cursor.setBlockFormat(format);
             if (format.headingLevel()>0) {
                 cursor.setPosition(block.position()); cursor.setPosition(block.position()+block.length()-1,QTextCursor::KeepAnchor);

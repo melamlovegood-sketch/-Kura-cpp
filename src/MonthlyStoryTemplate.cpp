@@ -79,7 +79,7 @@ void MonthlyStoryTemplate::addContext(QJsonObject &facts,const MonthlyReviewData
     QJsonArray samples; QSet<qint64> seen;
     const auto append=[&](const MonthlyReviewExpense &e) {
         if (samples.size()>=12 || seen.contains(e.id)) return;
-        samples.append(QJsonObject{{"id",QString::number(e.id)},{"name",e.name},{"category",CategoryCatalog::label(e.category)},
+        samples.append(QJsonObject{{"id",QString::number(e.id)},{"name",e.name},{"category",CategoryCatalog::purposeLabel(e.purposeCategory.isEmpty()?CategoryCatalog::purposeFromDetail(e.category):e.purposeCategory)},
             {"amount",Transaction::formatAmount(e.cents)},{"date",e.date.toString(Qt::ISODate)},
             {"evaluation",e.tag==1?QStringLiteral("值得"):e.tag==-1?QStringLiteral("后悔"):QStringLiteral("未标记")},
             {"evaluation_note",e.note.left(160)},{"purchase_note",e.purchaseNote.left(160)}}); seen.insert(e.id);
@@ -88,7 +88,7 @@ void MonthlyStoryTemplate::addContext(QJsonObject &facts,const MonthlyReviewData
     int specific=0;
     const QRegularExpression informative(QStringLiteral("教材|课程|学习|培训|课本|专业书|读书|学费|图书|键盘|鼠标|桌灯|工具|设备|椅|显示器"));
     for (const auto &e:data.expenses) if (informative.match(e.name+e.purchaseNote).hasMatch() && specific++<4) append(e);
-    for (const auto &category:data.categories) for (const auto &e:data.expenses) if (e.category==category.key) { append(e); break; }
+    for (const auto &category:data.categories) for (const auto &e:data.expenses) if ((e.purposeCategory.isEmpty()?CategoryCatalog::purposeFromDetail(e.category):e.purposeCategory)==category.key) { append(e); break; }
     for (const auto &e:data.expenses) append(e);
     facts.insert("selected_expenses",samples);
 }

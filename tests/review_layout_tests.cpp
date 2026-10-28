@@ -12,6 +12,8 @@
 #include <QDir>
 #include <QFrame>
 #include <QLabel>
+#include <QLineEdit>
+#include <QSignalSpy>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QScrollBar>
@@ -72,18 +74,77 @@ class ReviewLayoutTests:public QObject {
     Q_OBJECT
 private slots:
     void emptyStateAndMonthBoundaries();
-    void realRecordsThemesAndSecondaryNavigation();
+    void realRecordsThemesAndMonthSelection();
     void failedRefreshPreservesStoryAndMonth();
     void personalityCardAndStaleHistory();
     void recordsAlwaysHavePersonality();
-    void duePurchaseReviewsAppearAboveStory();
+    void legacyTasksDoNotRestoreRemovedPages();
+    void newTagAppearsOnBoard_data();
+    void newTagAppearsOnBoard();
 };
+
+void ReviewLayoutTests::newTagAppearsOnBoard_data()
+{
+    QTest::addColumn<int>("initialTag");
+    QTest::newRow("worth") << 1;
+    QTest::newRow("regret") << -1;
+}
+
+void ReviewLayoutTests::newTagAppearsOnBoard()
+{
+    QFETCH(int,initialTag);
+    QTemporaryDir directory; const auto path=directory.filePath("tag-flow.sqlite");
+    DatabaseManager database(path); QVERIFY(database.initialize()); TransactionRepository transactions(database);
+    Transaction record(0,QStringLiteral("通勤耳机"),29900,QStringLiteral("购物"),QDate::currentDate(),QTime(12,0),{},"online_shopping"); QVERIFY(transactions.add(record));
+    MainWindow window(path); window.resize(1180,860); window.show(); window.showPage(MainWindow::Page::Review); settle();
+    if (initialTag==-1) button(window,"monthlyRegretTabButton")->click();
+    button(window,"manageMonthlyTagsButton")->click(); settle();
+    auto *dialog=window.findChild<QDialog *>("monthlyTagsDialog"); QVERIFY(dialog);
+    auto *table=dialog->findChild<QTableWidget *>("monthlyTagTransactionsTable"); QVERIFY(table); QCOMPARE(table->rowCount(),1);
+    auto *tag=dialog->findChild<QComboBox *>("monthlyTagComboBox"); QVERIFY(tag);
+    auto *save=button(*dialog,"saveMonthlyTagButton"); QVERIFY(!save->isEnabled());
+    QTest::mouseClick(table->viewport(),Qt::LeftButton,Qt::NoModifier,table->visualItemRect(table->item(0,1)).center());
+    QVERIFY(save->isEnabled()); QCOMPARE(tag->currentData().toInt(),initialTag);
+    dialog->findChild<QLineEdit *>("monthlyTagNoteEdit")->setText(QStringLiteral("每天上下班都用"));
+    QSignalSpy changed(window.findChild<MonthlyReviewWidget *>(),&MonthlyReviewWidget::tagsChanged);
+    QTest::mouseClick(save,Qt::LeftButton); settle(); QCOMPARE(changed.count(),1);
+    auto *board=window.findChild<QWidget *>(initialTag==1?"monthlyWorthBoard":"monthlyRegretBoard");
+    QCOMPARE(board->findChildren<QWidget *>("monthlyReviewExpenseRow").size(),1);
+    QCOMPARE(label(*board,"monthlyReviewExpenseNameLabel")->text(),record.description());
+    QCOMPARE(label(*board,"monthlyReviewExpenseNoteLabel")->text(),QStringLiteral("每天上下班都用"));
+    MonthlyReviewRepository monthly(database); MonthlyReviewData data; QVERIFY(monthly.load(record.date(),data));
+    QCOMPARE(data.expenses.first().tag,initialTag); QCOMPARE(data.count,1);
+    QVERIFY(label(*dialog,"monthlyTagStatusLabel")->text().contains(initialTag==1?QStringLiteral("值得"):QStringLiteral("后悔")));
+    // Switching the saved rating must reveal its corresponding board immediately.
+    QTest::mouseClick(tag,Qt::LeftButton); settle();
+    auto *popup=tag->findChild<QFrame *>("modernComboPopup"); QVERIFY(popup);
+    QTest::mouseClick(button(*popup,initialTag==1?"chooseOption1":"chooseOption0"),Qt::LeftButton); settle();
+    QCOMPARE(tag->currentData().toInt(),-initialTag);
+    QTest::mouseClick(save,Qt::LeftButton); settle();
+    QVERIFY(button(window,initialTag==1?"monthlyRegretTabButton":"monthlyWorthTabButton")->isChecked());
+    auto *otherBoard=window.findChild<QWidget *>(initialTag==1?"monthlyRegretBoard":"monthlyWorthBoard");
+    QVERIFY(!otherBoard->isHidden()); QCOMPARE(otherBoard->findChildren<QWidget *>("monthlyReviewExpenseRow").size(),1);
+    QCOMPARE(board->findChildren<QWidget *>("monthlyReviewExpenseRow").size(),0);
+    // A failed write must not remove the persisted entry or claim success.
+    QSqlQuery query(database.database()); QVERIFY(query.exec("CREATE TRIGGER reject_tag_change BEFORE DELETE ON transaction_reviews BEGIN SELECT RAISE(FAIL,'fixture'); END"));
+    tag->setCurrentIndex(tag->findData(0)); save->click(); settle(); QCOMPARE(changed.count(),2);
+    QCOMPARE(otherBoard->findChildren<QWidget *>("monthlyReviewExpenseRow").size(),1);
+    QVERIFY(monthly.load(record.date(),data)); QCOMPARE(data.expenses.first().tag,-initialTag);
+    QVERIFY(query.exec("DROP TRIGGER reject_tag_change"));
+    save->click(); settle(); QCOMPARE(changed.count(),3); QCOMPARE(otherBoard->findChildren<QWidget *>("monthlyReviewExpenseRow").size(),0);
+    QVERIFY(label(*dialog,"monthlyTagStatusLabel")->text().contains(QStringLiteral("清除")));
+    tag->setCurrentIndex(tag->findData(initialTag)); save->click(); dialog->accept(); settle();
+    MainWindow reopened(path); reopened.show(); reopened.showPage(MainWindow::Page::Review); settle();
+    QCOMPARE(reopened.findChild<QWidget *>(initialTag==1?"monthlyWorthBoard":"monthlyRegretBoard")->findChildren<QWidget *>("monthlyReviewExpenseRow").size(),1);
+    QVERIFY(monthly.load(record.date(),data)); QCOMPARE(data.count,1); QCOMPARE(data.expenses.first().tag,initialTag);
+}
 
 void ReviewLayoutTests::emptyStateAndMonthBoundaries()
 {
     MainWindow window(":memory:"); window.resize(1180,860); window.show(); window.showPage(MainWindow::Page::Review); settle();
-    auto *sections=window.findChild<QTabWidget *>("reviewSectionsTabs");
-    QVERIFY(sections->tabBar()->isHidden());
+    QVERIFY(!window.findChild<QTabWidget *>("reviewSectionsTabs"));
+    QVERIFY(!button(window,"monthlyPurchaseReviewButton"));
+    QVERIFY(!button(window,"monthlyStatisticsButton"));
     QCOMPARE(label(window,"monthlyReviewTitleLabel")->text(),QStringLiteral("复盘"));
     QCOMPARE(label(window,"monthlySpentLabel")->text(),QStringLiteral("¥0.00"));
     QCOMPARE(label(window,"monthlyStoryTitleLabel")->text(),QStringLiteral("这个月，还没有记录。"));
@@ -101,7 +162,7 @@ void ReviewLayoutTests::emptyStateAndMonthBoundaries()
     month->setDate(QDate(9999,12,1)); settle(); QVERIFY(!button(window,"nextReviewMonthButton")->isEnabled());
 }
 
-void ReviewLayoutTests::realRecordsThemesAndSecondaryNavigation()
+void ReviewLayoutTests::realRecordsThemesAndMonthSelection()
 {
     QTemporaryDir directory; const auto path=directory.filePath("review.sqlite");
     DatabaseManager database(path); QVERIFY(database.initialize()); QVERIFY(populate(database));
@@ -121,8 +182,8 @@ void ReviewLayoutTests::realRecordsThemesAndSecondaryNavigation()
         window.showPage(MainWindow::Page::Settings); settle(); button(window,(theme+"ThemeButton").toUtf8().constData())->click();
         window.showPage(MainWindow::Page::Review); window.resize(1180,860); QTest::qWait(50); settle();
         QVERIFY2(scroll->horizontalScrollBar()->maximum()==0,qPrintable(theme));
-        auto *statistics=button(window,"monthlyStatisticsButton");
-        QVERIFY(scroll->viewport()->rect().contains(QRect(statistics->mapTo(scroll->viewport(),QPoint()),statistics->size())));
+        auto *boards=window.findChild<QFrame *>("monthlyReviewBoardsCard");
+        QVERIFY(scroll->viewport()->rect().contains(QRect(boards->mapTo(scroll->viewport(),QPoint()),boards->size())));
         QVERIFY(screenshot(window,theme));
         window.resize(800,600); settle();
         QVERIFY(scroll->horizontalScrollBar()->maximum()==0);
@@ -133,18 +194,10 @@ void ReviewLayoutTests::realRecordsThemesAndSecondaryNavigation()
     window.resize(1180,860); settle();
     auto *month=window.findChild<QDateEdit *>("monthlyReviewMonthEdit");
     const QDate selected(2024,10,1); month->setDate(selected); settle();
-    QTest::mouseClick(button(window,"monthlyStatisticsButton"),Qt::LeftButton); settle();
-    QCOMPARE(window.findChild<QTabWidget *>("reviewSectionsTabs")->currentIndex(),2);
-    QCOMPARE(window.findChild<QSpinBox *>("statisticsYearSpinBox")->value(),2024);
-    QCOMPARE(window.findChild<QComboBox *>("categoryReviewMonthComboBox")->currentIndex(),9);
-    QTest::mouseClick(button(window,"reviewStatisticsBackButton"),Qt::LeftButton); settle();
+    window.showPage(MainWindow::Page::Billing); settle();
+    window.showPage(MainWindow::Page::Review); settle();
     QCOMPARE(month->date(),selected);
     QVERIFY(window.findChild<MonthlyReviewWidget *>()->isVisible());
-    QTest::mouseClick(button(window,"monthlyPurchaseReviewButton"),Qt::LeftButton); settle();
-    QCOMPARE(window.findChild<QTabWidget *>("reviewSectionsTabs")->currentIndex(),1);
-    QTest::mouseClick(button(window,"purchaseReviewBackButton"),Qt::LeftButton); settle();
-    QCOMPARE(window.findChild<QTabWidget *>("reviewSectionsTabs")->currentIndex(),0);
-    QCOMPARE(month->date(),selected);
 }
 
 void ReviewLayoutTests::failedRefreshPreservesStoryAndMonth()
@@ -247,7 +300,7 @@ void ReviewLayoutTests::recordsAlwaysHavePersonality()
     QCOMPARE(card.personaId,QStringLiteral("squirrel"));
 }
 
-void ReviewLayoutTests::duePurchaseReviewsAppearAboveStory()
+void ReviewLayoutTests::legacyTasksDoNotRestoreRemovedPages()
 {
     QTemporaryDir directory; const auto path=directory.filePath("due.sqlite");
     DatabaseManager database(path); QVERIFY(database.initialize());
@@ -256,20 +309,25 @@ void ReviewLayoutTests::duePurchaseReviewsAppearAboveStory()
     QVERIFY(transactions.add(item)); ReviewRepository reviews(database);
     QVERIFY(reviews.schedule(item.id()));
     MainWindow window(path); window.resize(1180,860); window.show(); window.showPage(MainWindow::Page::Review); settle();
-    auto *due=button(window,"monthlyDueReviewsButton"); QVERIFY(due->isVisible());
-    QVERIFY(due->text().contains(QStringLiteral("1 项")));
-    auto *story=window.findChild<QFrame *>("monthlyStoryCard"); QVERIFY(due->geometry().bottom()<story->geometry().top());
-    QTest::mouseClick(due,Qt::LeftButton); settle();
-    QCOMPARE(window.findChild<QTabWidget *>("reviewSectionsTabs")->currentIndex(),1);
-    auto *table=window.findChild<QTableWidget *>("purchaseReviewTable"); table->selectRow(0); settle();
-    QTest::mouseClick(button(window,"openPurchaseReviewButton"),Qt::LeftButton); settle();
-    auto *dialog=window.findChild<QDialog *>("purchaseReviewDialog"); QVERIFY(dialog);
-    dialog->findChild<QComboBox *>("reviewFrequencyComboBox")->setCurrentIndex(2);
-    dialog->findChild<QComboBox *>("reviewWorthinessComboBox")->setCurrentIndex(1);
-    dialog->findChild<QPushButton *>("savePurchaseReviewButton")->click(); settle();
-    QTest::mouseClick(button(window,"purchaseReviewBackButton"),Qt::LeftButton); settle();
-    QVERIFY(due->isHidden());
-    qint64 count=-1; QVERIFY(reviews.dueCount(count)); QCOMPARE(count,0);
+    window.findChild<QDateEdit *>("monthlyReviewMonthEdit")->setDate(MonthlyBudget::firstDay(item.date())); settle();
+    QVERIFY(!button(window,"monthlyDueReviewsButton"));
+    QVERIFY(!button(window,"homeReviewButton"));
+    QVERIFY(!window.findChild<QWidget *>("purchaseReviewWidget"));
+    QVERIFY(!window.findChild<QSpinBox *>("statisticsYearSpinBox"));
+    QCOMPARE(label(window,"monthlySpentLabel")->text(),QStringLiteral("¥80.00"));
+    qint64 count=0; QVERIFY(reviews.dueCount(count)); QCOMPARE(count,1);
+    MonthlyReviewRepository monthly(database);
+    QVERIFY(monthly.setTag(item.id(),1,QStringLiteral("很值得")));
+    QVERIFY(window.findChild<MonthlyReviewWidget *>()->refresh());
+    QCOMPARE(window.findChild<QWidget *>("monthlyWorthBoard")->findChildren<QWidget *>("monthlyReviewExpenseRow").size(),1);
+    QVERIFY(reviews.dueCount(count)); QCOMPARE(count,1);
+    window.showPage(MainWindow::Page::Home); settle();
+    QVERIFY(!window.findChild<QWidget *>("workflowOverview"));
+    QList<Transaction> records; QVERIFY(transactions.findAll(records)); QCOMPARE(records.size(),1);
+    MainWindow restarted(path); restarted.show(); restarted.showPage(MainWindow::Page::Review); settle();
+    restarted.findChild<QDateEdit *>("monthlyReviewMonthEdit")->setDate(MonthlyBudget::firstDay(item.date())); settle();
+    QCOMPARE(restarted.findChild<QWidget *>("monthlyWorthBoard")->findChildren<QWidget *>("monthlyReviewExpenseRow").size(),1);
+    QVERIFY(!restarted.findChild<QWidget *>("purchaseReviewWidget"));
 }
 
 QTEST_MAIN(ReviewLayoutTests)

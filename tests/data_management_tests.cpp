@@ -252,7 +252,7 @@ void DataManagementTests::filterExportAndRestoreUi()
     MainWindow window(path); window.showPage(MainWindow::Page::Billing); window.show(); settle();
     auto *widget = window.findChild<DataManagementWidget *>(); QVERIFY(widget);
     auto *category = window.findChild<QComboBox *>(QStringLiteral("categoryFilter"));
-    category->setCurrentText(QStringLiteral("购物"));
+    category->setCurrentText(QStringLiteral("未分类"));
     const QString csv = directory.filePath(QStringLiteral("visible.csv"));
     QVERIFY(widget->exportTo(csv, false)); // Changed controls alone are not an applied filter.
     QVERIFY(contents(csv).contains(QStringLiteral("午饭").toUtf8()));
@@ -260,10 +260,10 @@ void DataManagementTests::filterExportAndRestoreUi()
     QVERIFY(widget->exportTo(csv, false)); QVERIFY(!contents(csv).contains(QStringLiteral("午饭").toUtf8()));
     QVERIFY(contents(csv).contains(QStringLiteral("耳机").toUtf8()));
     QVERIFY(widget->exportTo(csv, true)); QVERIFY(contents(csv).contains(QStringLiteral("午饭").toUtf8()));
-    category->setCurrentText(QStringLiteral("交通"));
+    category->setCurrentText(QStringLiteral("出行"));
     window.findChild<QPushButton *>(QStringLiteral("applyFilterButton"))->click();
     QVERIFY(widget->exportTo(csv, false)); QCOMPARE(contents(csv).count('\n'), 1);
-    category->setCurrentText(QStringLiteral("购物"));
+    category->setCurrentText(QStringLiteral("未分类"));
     window.findChild<QPushButton *>(QStringLiteral("applyFilterButton"))->click();
     const QByteArray before = contents(path);
     QVERIFY(!widget->exportTo(path, true)); QCOMPARE(contents(path), before);
@@ -275,7 +275,7 @@ void DataManagementTests::filterExportAndRestoreUi()
     QVERIFY(confirmation->detailedText().contains(QStringLiteral("消费 2 笔，预算 1 个月，愿望 1 条")));
     QCOMPARE(static_cast<QAbstractButton *>(confirmation->defaultButton()), confirmation->button(QMessageBox::No));
     confirmation->button(QMessageBox::No)->click(); settle();
-    QCOMPARE(category->currentText(), QStringLiteral("购物"));
+    QCOMPARE(category->currentText(), QStringLiteral("未分类"));
     window.findChild<QPushButton *>(QStringLiteral("addTransactionButton"))->click(); settle();
     QVERIFY(!widget->requestRestore(backup));
     auto *editor = window.findChild<AddTransactionDialog *>(); QVERIFY(editor); editor->reject(); settle();

@@ -13,6 +13,7 @@ class QJsonArray;
 struct ParsedProduct {
     QString name, category = QStringLiteral("online_shopping"), note;
     qint64 amountCents = 0;
+    QString purposeCategory, budgetScope;
 };
 Q_DECLARE_METATYPE(ParsedProduct)
 struct ParsedPrice {

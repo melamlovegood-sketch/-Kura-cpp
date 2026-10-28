@@ -70,12 +70,9 @@ bool DemoData::populate(DatabaseManager &database, QString &error, const QDateTi
     if (!pool.setGoal(goalId) || !pool.addSaving(4500,QStringLiteral("忍住了：一次冲动外卖"),QStringLiteral("demo-saving"))) { error=pool.lastError(); return false; }
     ShoppingProfileRepository profile(database);
     if (!profile.saveRules({QStringLiteral("先确认实际用途，再比较价格。"),QStringLiteral("高金额购买先比较参数和退换条件。" )})) { error=profile.lastError(); return false; }
-    BrandEntry digital; digital.name=QStringLiteral("演示数码品牌"); digital.category="online_shopping"; digital.note=QStringLiteral("虚构品牌，仅用于演示。"); digital.weight=3;
-    BrandEntry daily; daily.name=QStringLiteral("演示日常品牌"); daily.category="other"; daily.note=QStringLiteral("虚构品牌，仅用于演示。"); daily.weight=2;
-    if (!profile.saveBrand(digital) || !profile.saveBrand(daily)) { error=profile.lastError(); return false; }
     QList<Transaction> all; if (!transactions.findAll(all)) { error=transactions.lastError(); return false; }
     ReviewRepository reviews(database);
-    for (const auto &record:all) if (record.description()==QStringLiteral("上一年消费")) { if (!reviews.schedule(record.id(),daily.id)) { error=reviews.lastError(); return false; } break; }
+    for (const auto &record:all) if (record.description()==QStringLiteral("上一年消费")) { if (!reviews.schedule(record.id())) { error=reviews.lastError(); return false; } break; }
     PriceRepository prices(database); qint64 trackId=0;
     if (!prices.intake(QStringLiteral("机械键盘"),"online_shopping",32900,QStringLiteral("虚构演示价格"),"demo-price-one",trackId,now.addDays(-7))
         || !prices.record(trackId,27900,QStringLiteral("虚构演示券后价"),"demo-price-two",now)

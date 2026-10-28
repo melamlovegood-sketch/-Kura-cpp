@@ -1,6 +1,9 @@
 #include "ModernSelectors.h"
 #include "WishlistWidget.h"
+#include "PricePerspective.h"
 #include "WishPriceDialog.h"
+#include "WishPoolRepository.h"
+#include "WishActionButton.h"
 #include <QActionGroup>
 #include <QDialogButtonBox>
 #include <QListWidget>
@@ -21,6 +24,7 @@
 #include <QLabel>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QMenu>
 #include <QToolButton>
 #include <QWidgetAction>
@@ -34,8 +38,8 @@ WishlistWidget::WishlistWidget(DatabaseManager &database, QWidget *parent)
     setObjectName(QStringLiteral("wishlistWidget"));
     if (database.databasePath()!=":memory:") {
         QSettings settings(database.databasePath()+".ui.ini",QSettings::IniFormat);
-        const auto mode=settings.value("wishlist/sort_mode","newest").toString();
-        if (mode=="oldest" || mode=="manual") m_sortMode=mode;
+        const auto mode=settings.value("wishlist/sort_mode","priority").toString();
+        if (mode=="newest" || mode=="oldest" || mode=="manual") m_sortMode=mode;
     }
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
@@ -74,12 +78,15 @@ WishlistWidget::WishlistWidget(DatabaseManager &database, QWidget *parent)
     menu->addAction(filterAction);
     menu->addSection(QStringLiteral("排序"));
     auto *sortGroup=new QActionGroup(menu);
+    m_sortPriority=menu->addAction(QStringLiteral("优先级：高到低（默认）")); m_sortPriority->setObjectName("wishlistSortPriorityAction");
     m_sortNewest=menu->addAction(QStringLiteral("添加时间：新到旧")); m_sortNewest->setObjectName("wishlistSortNewestAction");
     m_sortOldest=menu->addAction(QStringLiteral("添加时间：旧到新")); m_sortOldest->setObjectName("wishlistSortOldestAction");
     m_sortManual=menu->addAction(QStringLiteral("手动顺序")); m_sortManual->setObjectName("wishlistSortManualAction");
-    for (auto *action:{m_sortNewest,m_sortOldest,m_sortManual}) { action->setCheckable(true); sortGroup->addAction(action); }
+    for (auto *action:{m_sortPriority,m_sortNewest,m_sortOldest,m_sortManual}) { action->setCheckable(true); sortGroup->addAction(action); }
+    m_sortPriority->setChecked(m_sortMode=="priority");
     m_sortNewest->setChecked(m_sortMode=="newest"); m_sortOldest->setChecked(m_sortMode=="oldest"); m_sortManual->setChecked(m_sortMode=="manual");
     connect(m_sortNewest,&QAction::triggered,this,[this] { setSortMode("newest"); });
+    connect(m_sortPriority,&QAction::triggered,this,[this] { setSortMode("priority"); });
     connect(m_sortOldest,&QAction::triggered,this,[this] { setSortMode("oldest"); });
     connect(m_sortManual,&QAction::triggered,this,[this] { if (m_positions.isEmpty()) adjustOrder(); else setSortMode("manual"); });
     m_adjustOrder=menu->addAction(QStringLiteral("调整顺序…")); m_adjustOrder->setObjectName("wishlistAdjustOrderAction"); connect(m_adjustOrder,&QAction::triggered,this,&WishlistWidget::adjustOrder);
@@ -93,9 +100,6 @@ WishlistWidget::WishlistWidget(DatabaseManager &database, QWidget *parent)
     connect(m_filter, &QComboBox::activated, menu, &QMenu::close);
     m_purchase = new QPushButton(QStringLiteral("决定是否购买"), this);
     m_purchase->setObjectName(QStringLiteral("purchaseWishButton"));
-    m_abandon = new QPushButton(QStringLiteral("这次不买"), this);
-    m_abandon->setObjectName(QStringLiteral("abandonWishButton"));
-    m_abandon->setProperty("link", true);
     auto *details = new QWidget(this);
     details->setObjectName(QStringLiteral("wishProductDetails"));
     auto *detailLayout = new QVBoxLayout(details);
@@ -105,29 +109,10 @@ WishlistWidget::WishlistWidget(DatabaseManager &database, QWidget *parent)
     m_detailsText->setObjectName(QStringLiteral("wishProductDetailsLabel"));
     auto *info = new QHBoxLayout;
     info->addWidget(m_detailsText, 1);
-    m_productMore = new QToolButton(details);
-    m_productMore->setObjectName(QStringLiteral("wishProductMoreButton"));
-    m_productMore->setText(QStringLiteral("···"));
-    m_productMore->setAccessibleName(QStringLiteral("待购商品选项"));
-    m_productMore->setPopupMode(QToolButton::InstantPopup);
-    auto *productMenu = new QMenu(m_productMore);
-    productMenu->setObjectName(QStringLiteral("wishProductMenu"));
-    m_edit = productMenu->addAction(QStringLiteral("修改商品"));
-    m_edit->setObjectName(QStringLiteral("editWishAction"));
-    m_pin = productMenu->addAction(QStringLiteral("设为许愿目标"));
-    m_pin->setObjectName(QStringLiteral("setWishPoolGoalAction"));
-    m_abandonAction = productMenu->addAction(QStringLiteral("放弃购买"));
-    m_abandonAction->setObjectName(QStringLiteral("abandonWishAction"));
-    productMenu->addSeparator();
-    m_delete = productMenu->addAction(QStringLiteral("删除商品"));
-    m_delete->setObjectName(QStringLiteral("deleteWishAction"));
-    m_productMore->setMenu(productMenu);
-    info->addStretch(); info->addWidget(m_productMore, 0, Qt::AlignTop);
     detailLayout->addLayout(info);
     auto *actions = new QHBoxLayout;
     actions->setSpacing(8);
     actions->addWidget(m_purchase);
-    m_abandon->hide();
     m_priceButton=new QPushButton(QStringLiteral("价格记录 →"),details); m_priceButton->setObjectName("wishPriceButton"); m_priceButton->setProperty("link",true); actions->addWidget(m_priceButton);
     connect(m_priceButton,&QPushButton::clicked,this,&WishlistWidget::openPrices);
     actions->addStretch();
@@ -142,8 +127,30 @@ WishlistWidget::WishlistWidget(DatabaseManager &database, QWidget *parent)
     layout->addWidget(m_error);
     m_table = new ProductList(7, this);
     m_table->setObjectName(QStringLiteral("wishlistTable"));
-    auto *productInfo=new QAction(QStringLiteral("商品资料"),productMenu); productMenu->insertAction(m_edit,productInfo); productInfo->setObjectName("wishProductInfoAction");
-    connect(productInfo,&QAction::triggered,this,[this] { if (const auto *item=selectedItem()) ProductDetailsDialog::openFor(m_database,"wish",item->id,this); });
+    auto *productInfo=new QPushButton(QStringLiteral("商品资料"),details);
+    productInfo->setObjectName("wishProductInfoButton");
+    productInfo->setProperty("quiet",true);
+    actions->insertWidget(0,productInfo);
+    connect(productInfo,&QPushButton::clicked,this,[this] { openProductDetails(selectedId()); });
+    m_table->setProductDetailsHandler([this](int row) {
+        if (auto *cell=m_table->item(row,0)) openProductDetails(cell->data(Qt::UserRole).toLongLong());
+    });
+    m_table->setRowActionsHandler([this](int row,QHBoxLayout *header) {
+        auto *wand=new WishActionButton(WishActionButton::Wand,m_table);
+        wand->setObjectName("wishGoalButton");
+        auto *trash=new WishActionButton(WishActionButton::Trash,m_table);
+        trash->setObjectName("wishAbandonButton");
+        auto *buttons=new QHBoxLayout; buttons->setSpacing(4); buttons->addWidget(wand); buttons->addWidget(trash);
+        header->addLayout(buttons);
+        connect(wand,&QToolButton::clicked,this,[this,row,wand] {
+            // Check state follows the committed goal, including cancelled switches.
+            wand->setChecked(wand->property("currentGoal").toBool());
+            if (auto *cell=m_table->item(row,0)) emit goalRequested(cell->data(Qt::UserRole).toLongLong());
+        });
+        connect(trash,&QToolButton::clicked,this,[this,row] {
+            if (auto *cell=m_table->item(row,0)) confirmWish(cell->data(Qt::UserRole).toLongLong());
+        });
+    });
     m_table->setHorizontalHeaderLabels({QStringLiteral("名称"), QStringLiteral("预计价格"), QStringLiteral("分类"),
         QStringLiteral("状态与剩余时间"), QStringLiteral("冷静期截止"), QStringLiteral("购买理由"), QStringLiteral("优先级")});
     m_table->setDetailWidget(details);
@@ -157,14 +164,9 @@ WishlistWidget::WishlistWidget(DatabaseManager &database, QWidget *parent)
     layout->addWidget(m_empty);
     layout->addStretch();
     connect(m_add, &QPushButton::clicked, this, [this] { openWishDialog(); });
-    connect(m_pin,&QAction::triggered,this,[this] { if (const auto *item=selectedItem()) emit goalRequested(item->id); });
     connect(m_refresh, &QPushButton::clicked, this, [this] { refresh(); });
     connect(m_filter, &QComboBox::currentIndexChanged, this, [this] { refreshCountdowns(); });
-    connect(m_edit, &QAction::triggered, this, [this] { openWishDialog(selectedItem()); });
     connect(m_purchase, &QPushButton::clicked, this, &WishlistWidget::purchaseSelected);
-    connect(m_abandon, &QPushButton::clicked, this, [this] { confirmSelected(false); });
-    connect(m_abandonAction, &QAction::triggered, this, [this] { confirmSelected(false); });
-    connect(m_delete, &QAction::triggered, this, [this] { confirmSelected(true); });
     connect(m_table, &QTableWidget::itemSelectionChanged, this, &WishlistWidget::updateActions);
     auto *timer = new QTimer(this);
     timer->setInterval(1000);
@@ -204,6 +206,9 @@ bool WishlistWidget::refresh()
             .arg(m_hasSnapshot ? QStringLiteral("，仍显示上次数据") : QString(), m_repository.lastError()));
         return false;
     }
+    WishPoolSnapshot pool; WishPoolRepository poolRepository(m_database);
+    if (!poolRepository.load(pool)) { showError(poolRepository.lastError()); return false; }
+    m_goalWishId=pool.wishId;
     m_items = loaded; m_positions=positions; m_legacyArchives=legacyArchives; m_prices.clear();
     for (const auto &price:prices) for (auto it=links.cbegin();it!=links.cend();++it) if (it.value()==price.id) m_prices.insert(it.key(),price);
     m_hasSnapshot = true;
@@ -222,6 +227,7 @@ void WishlistWidget::refreshCountdowns(const QDateTime &now)
 
 void WishlistWidget::render(const QDateTime &now)
 {
+    const auto perspective=PricePerspectiveStore::load(PricePerspectiveStore::settingsPath(m_database.databasePath()));
     const qint64 selected = selectedId();
     int waiting = 0, ready = 0, purchased = 0, abandoned = 0;
     qint64 abandonedCents = 0;
@@ -278,8 +284,22 @@ void WishlistWidget::render(const QDateTime &now)
                 : QStringLiteral("冷静期 · 不足 1 小时");
         }
         const auto price=m_prices.value(item.id);
-        m_table->setSummary(row,item.name,status,Transaction::formatAmount(price.id?price.latestCents:item.estimatedCents),price.id?QStringLiteral("最近价格"):QStringLiteral("预计价格"));
+        m_table->setSummary(row,item.name,item.status==WishStatus::Waiting?item.priorityText()+QStringLiteral(" · ")+status:status,Transaction::formatAmount(price.id?price.latestCents:item.estimatedCents),price.id?QStringLiteral("最近价格"):QStringLiteral("预计价格"));
+        const auto cost=item.status==WishStatus::Waiting?perspective.quote(price.id?price.latestCents:item.estimatedCents):PriceQuote{};
+        m_table->setCostHint(row,cost.compact,cost.primary+(cost.secondary.isEmpty()?QString():"\n"+cost.secondary)+"\n"+cost.basis);
         m_table->setCoolingState(row,item.status==WishStatus::Waiting && !item.canPurchase(now),item.status!=WishStatus::Waiting);
+        auto *body=m_table->cellWidget(row,0);
+        auto *wand=body->findChild<QToolButton *>("wishGoalButton");
+        const bool waiting=item.status==WishStatus::Waiting;
+        const bool goal=waiting && item.id==m_goalWishId;
+        wand->setVisible(waiting); wand->setEnabled(m_available);
+        wand->setChecked(goal); wand->setProperty("currentGoal",goal);
+        wand->setToolTip(goal?QStringLiteral("已设为许愿目标"):QStringLiteral("点击设为许愿目标"));
+        wand->setAccessibleName(wand->toolTip());
+        auto *trash=body->findChild<QToolButton *>("wishAbandonButton");
+        trash->setToolTip(waiting?QStringLiteral("放弃这件商品"):QStringLiteral("删除这条记录"));
+        trash->setAccessibleName(waiting?QStringLiteral("放弃商品"):QStringLiteral("删除记录"));
+        trash->setEnabled(m_available);
         if (item.id == selected) selectedRow = row;
     }
     if (rebuild && selectedRow >= 0) m_table->selectRow(selectedRow);
@@ -319,21 +339,11 @@ void WishlistWidget::updateActions()
     m_adjustOrder->setEnabled(m_available && std::count_if(m_items.cbegin(),m_items.cend(),[](const WishItem &w) { return w.status==WishStatus::Waiting; })>1);
     m_refresh->setEnabled(m_available);
     m_filter->setEnabled(m_available && m_hasSnapshot);
-    m_edit->setEnabled(open);
-    m_pin->setEnabled(open);
-    m_delete->setEnabled(m_available && item);
-    m_productMore->setEnabled(m_available && item);
-    m_abandon->setEnabled(open);
     const bool ready = open && item->canPurchase(m_now);
     m_purchase->setEnabled(ready);
     m_purchase->setVisible(open);
     m_purchase->setText(ready?QStringLiteral("决定是否购买"):QStringLiteral("冷静期内，暂不可购买"));
-    m_abandon->hide();
     m_priceButton->setEnabled(m_available && item);
-    m_edit->setVisible(item && item->status == WishStatus::Waiting);
-    m_pin->setVisible(item && item->status == WishStatus::Waiting);
-    m_abandonAction->setEnabled(open);
-    m_abandonAction->setVisible(item && item->status == WishStatus::Waiting);
     if (item) {
         m_detailsText->setText(item->reason.isEmpty()?QString():QStringLiteral("购买理由：")+item->reason);
         m_detailsText->setVisible(!item->reason.isEmpty());
@@ -343,8 +353,36 @@ void WishlistWidget::updateActions()
     } else m_detailsText->clear();
 }
 
+void WishlistWidget::openProductDetails(qint64 id)
+{
+    if (!m_available || !id) return;
+    auto *dialog=ProductDetailsDialog::openFor(m_database,"wish",id,this);
+    if (!dialog) return;
+    connect(dialog,&ProductDetailsDialog::profileChanged,this,[this] { refresh(); });
+    const auto found=std::find_if(m_items.cbegin(),m_items.cend(),[id](const WishItem &item) { return item.id==id; });
+    if (found==m_items.cend() || found->status!=WishStatus::Waiting) return;
+    auto *edit=new QPushButton(QStringLiteral("修改清单信息"),dialog);
+    edit->setObjectName("editWishDetailsButton"); edit->setProperty("quiet",true);
+    edit->setToolTip(QStringLiteral("修改商品名称、预计价格、分类、冷静期与优先级"));
+    if (auto *heading=dialog->findChild<QHBoxLayout *>("productDetailsHeading")) heading->insertWidget(1,edit);
+    connect(edit,&QPushButton::clicked,this,[this,id,dialog] {
+        for (const auto &item:m_items) if (item.id==id && item.status==WishStatus::Waiting) {
+            // Close the old context so its name and price cannot remain stale.
+            openWishDialog(&item); dialog->reject(); return;
+        }
+    });
+}
+
 void WishlistWidget::openWishDialog(const WishItem *existing)
 {
+    WishItem latest;
+    if (existing) {
+        const auto id=existing->id; QList<WishItem> current;
+        if (!m_repository.findAll(current)) { showError(m_repository.lastError()); return; }
+        const auto found=std::find_if(current.cbegin(),current.cend(),[id](const WishItem &item) { return item.id==id; });
+        if (found==current.cend()) { showError(QStringLiteral("商品已不存在，请刷新清单。")); return; }
+        latest=*found; existing=&latest;
+    }
     auto *dialog = existing ? new WishDialog(*existing, this) : new WishDialog(this);
     dialog->setAttribute(Qt::WA_DeleteOnClose);
     const bool editing = existing != nullptr;
@@ -370,16 +408,13 @@ void WishlistWidget::purchaseSelected()
     const qint64 id = item->id;
     const auto price=m_prices.value(id);
     const Transaction draft(0, item->name, price.id?price.latestCents:item->estimatedCents, item->category, QDate::currentDate(),{},item->reason,item->detailCategory,item->sourceImage);
-    auto *dialog = new AddTransactionDialog(draft, this);
-    ShoppingProfileRepository profile(m_database); QList<BrandEntry> brands;
-    if (!profile.loadBrands(brands)) { dialog->deleteLater(); showError(profile.lastError()); return; }
-    dialog->setBrands(brands);
+    auto *dialog = new AddTransactionDialog(draft, this,m_database.databasePath()==QStringLiteral(":memory:")?QString():m_database.databasePath()+QStringLiteral(".ui.ini"));
     dialog->setObjectName(QStringLiteral("wishPurchaseDialog"));
     dialog->setWindowTitle(QStringLiteral("购买并记账（请确认实际金额）"));
     dialog->setAttribute(Qt::WA_DeleteOnClose);
     connect(dialog, &AddTransactionDialog::saveRequested, this, [this, dialog, id] {
         auto expense = dialog->transaction();
-        if (!m_repository.purchase(id, expense,QDateTime::currentDateTimeUtc(),dialog->selectedBrandId())) {
+        if (!m_repository.purchase(id, expense,QDateTime::currentDateTimeUtc())) {
             dialog->showSaveError(m_repository.lastError());
             return;
         }
@@ -391,17 +426,19 @@ void WishlistWidget::purchaseSelected()
     dialog->open();
 }
 
-void WishlistWidget::confirmSelected(bool removing)
+void WishlistWidget::confirmWish(qint64 wishId)
 {
-    const auto *item = selectedItem();
+    const WishItem *item=nullptr;
+    for (const auto &candidate:m_items) if (candidate.id==wishId) { item=&candidate; break; }
     if (!item) return;
     const qint64 id = item->id;
-    const QString action = removing ? QStringLiteral("删除愿望") : QStringLiteral("放弃购买");
+    const bool removing=item->status!=WishStatus::Waiting;
+    const QString action = removing ? QStringLiteral("删除记录") : QStringLiteral("放弃");
     const QString explanation = removing
         ? QStringLiteral("仅删除清单条目，已记录的消费仍保留。")
-        : QStringLiteral("会保留放弃记录，不会计入消费或预算。");
+        : QStringLiteral("商品会从待购清单移除，保留放弃记录，不计入消费或预算。");
     auto *confirmation = new QMessageBox(QMessageBox::Question, action,
-        QStringLiteral("确定对“%1”%2吗？\n%3").arg(item->name, action, explanation),
+        QStringLiteral("确定删除“%1”吗？\n%2").arg(item->name, explanation),
         QMessageBox::Yes | QMessageBox::No, this);
     confirmation->setObjectName(QStringLiteral("wishConfirmationDialog"));
     confirmation->setTextFormat(Qt::PlainText);
@@ -419,6 +456,7 @@ void WishlistWidget::confirmSelected(bool removing)
         }
         if (!refresh())
             showError(QStringLiteral("操作已完成，但刷新失败：%1。请点击刷新。").arg(m_repository.lastError()));
+        emit pricesChanged();
     });
     confirmation->open();
 }
@@ -432,6 +470,7 @@ void WishlistWidget::showError(const QString &error)
 void WishlistWidget::sortItems(QList<const WishItem *> &items) const
 {
     std::stable_sort(items.begin(),items.end(),[this](const WishItem *a,const WishItem *b) {
+        if (m_sortMode=="priority" && a->priority!=b->priority) return a->priority<b->priority;
         if (m_sortMode=="manual") {
             const auto ap=m_positions.value(a->id,std::numeric_limits<qint64>::max()),bp=m_positions.value(b->id,std::numeric_limits<qint64>::max());
             if (ap!=bp) return ap<bp;
@@ -443,7 +482,7 @@ void WishlistWidget::sortItems(QList<const WishItem *> &items) const
 
 void WishlistWidget::setSortMode(const QString &mode)
 {
-    m_sortMode=mode; m_sortNewest->setChecked(mode=="newest"); m_sortOldest->setChecked(mode=="oldest"); m_sortManual->setChecked(mode=="manual");
+    m_sortMode=mode; m_sortPriority->setChecked(mode=="priority"); m_sortNewest->setChecked(mode=="newest"); m_sortOldest->setChecked(mode=="oldest"); m_sortManual->setChecked(mode=="manual");
     if (m_database.databasePath()!=":memory:") { QSettings settings(m_database.databasePath()+".ui.ini",QSettings::IniFormat); settings.setValue("wishlist/sort_mode",mode); }
     refreshCountdowns();
 }
@@ -472,6 +511,7 @@ void WishlistWidget::adjustOrder()
         setSortMode("manual"); dialog->accept();
     });
     // Opening the editor does not change the selected sort mode until Save.
+    m_sortPriority->setChecked(m_sortMode=="priority");
     m_sortNewest->setChecked(m_sortMode=="newest"); m_sortOldest->setChecked(m_sortMode=="oldest"); m_sortManual->setChecked(m_sortMode=="manual"); dialog->open();
 }
 
@@ -481,6 +521,37 @@ void WishlistWidget::openPrices()
     auto *dialog=new WishPriceDialog(m_database,item->id,this); dialog->setAttribute(Qt::WA_DeleteOnClose);
     connect(dialog,&WishPriceDialog::pricesChanged,this,[this] { refresh(); emit pricesChanged(); });
     connect(dialog,&WishPriceDialog::settingsRequested,this,&WishlistWidget::settingsRequested); dialog->open();
+}
+
+void WishlistWidget::showReadyWishes(qint64 wishId)
+{
+    if (!refresh()) return;
+    m_filter->setCurrentIndex(2);
+    m_table->clearSelection();
+    m_table->setCurrentCell(-1, -1);
+    if (!wishId) return;
+    for (int row = 0; row < m_table->rowCount(); ++row) {
+        auto *item = m_table->item(row, 0);
+        if (item && item->data(Qt::UserRole).toLongLong() == wishId) {
+            m_table->selectRow(row);
+            m_table->updateExpansion();
+            m_table->scrollToItem(item);
+            // ProductList grows to its full height; its surrounding page owns scrolling.
+            QTimer::singleShot(0, this, [this, wishId] {
+                const int selected = m_table->currentRow();
+                auto *cell = selected >= 0 ? m_table->item(selected, 0) : nullptr;
+                if (!cell || cell->data(Qt::UserRole).toLongLong() != wishId) return;
+                for (auto *parent = parentWidget(); parent; parent = parent->parentWidget()) {
+                    if (auto *scroll = qobject_cast<QScrollArea *>(parent)) {
+                        scroll->ensureWidgetVisible(m_table->cellWidget(selected, 0), 0, 16);
+                        break;
+                    }
+                }
+            });
+            return;
+        }
+    }
+    showError(QStringLiteral("这件商品的状态已变化，当前显示待决定的商品。"));
 }
 
 void WishlistWidget::showPrices(qint64 trackId)

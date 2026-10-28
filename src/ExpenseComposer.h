@@ -3,6 +3,7 @@
 #include "DatabaseManager.h"
 #include <QWidget>
 class QPlainTextEdit;
+class QImage;
 class QLineEdit;
 class QDoubleSpinBox;
 class QPushButton;
@@ -10,6 +11,7 @@ class QLabel;
 class QFrame;
 class QStackedWidget;
 class ModernComboBox;
+class ExpenseClassification;
 class DatePicker;
 class ExpenseComposer:public QWidget {
     Q_OBJECT
@@ -25,6 +27,7 @@ signals:
     void expenseSaved(qint64 id,const QDate &date);
     void settingsRequested();
 private:
+    bool useImage(const QImage &image,const QString &name);
     void setMode(bool manual);
     void updateControls();
     void analyze();
@@ -42,7 +45,7 @@ private:
     QPlainTextEdit *m_text,*m_aiNote,*m_manualNote;
     QLineEdit *m_name,*m_aiName;
     QDoubleSpinBox *m_amount,*m_aiAmount;
-    ModernComboBox *m_category,*m_aiCategory;
+    ExpenseClassification *m_classification,*m_aiClassification;
     DatePicker *m_date;
     QFrame *m_confirmation;
     QLabel *m_error,*m_file;

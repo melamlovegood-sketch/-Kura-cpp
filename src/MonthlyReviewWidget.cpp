@@ -1,12 +1,12 @@
 #include "ModernSelectors.h"
 #include "MonthlyReviewWidget.h"
+#include "AchievementWall.h"
 #include "ProductDetailsDialog.h"
 #include "ProductList.h"
 #include "ShellWidgets.h"
 #include "AppTheme.h"
 #include "CategoryCatalog.h"
 #include "Transaction.h"
-#include "ReviewRepository.h"
 #include <QAction>
 #include <QButtonGroup>
 #include <QComboBox>
@@ -27,10 +27,9 @@ MonthlyReviewWidget::MonthlyReviewWidget(DatabaseManager &database,const QString
     setObjectName("monthlyReviewWidget");
     setSizePolicy(QSizePolicy::Preferred,QSizePolicy::Maximum);
     auto *layout=new QVBoxLayout(this);
-    layout->setContentsMargins(28,28,28,26); layout->setSpacing(20);
+    ShellWidgets::pageLayout(layout);
     auto *heading=new QHBoxLayout;
-    m_title=ShellWidgets::label(QStringLiteral("复盘"),this);
-    m_title->setObjectName("monthlyReviewTitleLabel"); heading->addWidget(m_title,1);
+    m_title=ShellWidgets::pageTitle(QStringLiteral("复盘"),this,"monthlyReviewTitleLabel"); heading->addWidget(m_title,1);
     const auto monthButton=[&](const QString &text,const char *name,const QString &accessible) {
         auto *button=new QPushButton(text,this); button->setObjectName(QLatin1String(name));
         button->setProperty("reviewMonthArrow",true); button->setFixedSize(30,36);
@@ -46,13 +45,9 @@ MonthlyReviewWidget::MonthlyReviewWidget(DatabaseManager &database,const QString
     m_month->setToolTip(QStringLiteral("可直接修改年份或月份，左右箭头切换月份。"));
     heading->setSpacing(5); heading->addWidget(m_prev); heading->addWidget(m_month); heading->addWidget(m_next);
     layout->addLayout(heading);
-    m_dueReviews=new QPushButton(this); m_dueReviews->setObjectName("monthlyDueReviewsButton");
-    m_dueReviews->setProperty("reviewLink",true); m_dueReviews->hide();
-    layout->addWidget(m_dueReviews,0,Qt::AlignLeft);
-    connect(m_dueReviews,&QPushButton::clicked,this,&MonthlyReviewWidget::purchaseReviewRequested);
 
     QFrame *story; auto *storyLayout=ShellWidgets::card(this,&story);
-    story->setObjectName("monthlyStoryCard"); storyLayout->setContentsMargins(28,22,28,24); storyLayout->setSpacing(12);
+    story->setObjectName("monthlyStoryCard"); storyLayout->setContentsMargins(28,22,28,24); storyLayout->setSpacing(16);
     auto *storyHeading=new QHBoxLayout;
     m_personaBadge=ShellWidgets::label(QStringLiteral("本月故事"),story);
     m_personaBadge->setObjectName("monthlyStoryPersonaLabel"); storyHeading->addWidget(m_personaBadge,1);
@@ -73,7 +68,10 @@ MonthlyReviewWidget::MonthlyReviewWidget(DatabaseManager &database,const QString
     m_storyTitle->setObjectName("monthlyStoryTitleLabel"); storyLayout->addWidget(m_storyTitle);
     m_storyText=ShellWidgets::label(QStringLiteral("记下一笔消费或购买选择，就能开启本月人格故事。"),story);
     m_storyText->setObjectName("monthlyStoryText"); m_storyText->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    m_storyText->setSizePolicy(QSizePolicy::Preferred,QSizePolicy::Minimum); storyLayout->addWidget(m_storyText);
+    m_storyText->setMaximumWidth(760);
+    m_storyText->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Minimum);
+    auto *storyBodyRow=new QHBoxLayout; storyBodyRow->setContentsMargins(0,0,0,0);
+    storyBodyRow->addWidget(m_storyText,1); storyBodyRow->addStretch(); storyLayout->addLayout(storyBodyRow);
     m_interlude=ShellWidgets::label(QString(),story); m_interlude->setObjectName("monthlyStoryInterludeLabel"); storyLayout->addWidget(m_interlude); m_interlude->hide();
     m_nextTask=ShellWidgets::label(QString(),story); m_nextTask->setObjectName("monthlyStoryNextStepLabel"); storyLayout->addWidget(m_nextTask); m_nextTask->hide();
     m_expandStory=new QPushButton(QStringLiteral("展开全文"),story); m_expandStory->setObjectName("monthlyStoryExpandButton");
@@ -103,7 +101,7 @@ MonthlyReviewWidget::MonthlyReviewWidget(DatabaseManager &database,const QString
     m_resists=figure(QStringLiteral("忍住了"),"monthlyResistCountLabel",QStringLiteral("次")); divider();
     m_saved=figure(QStringLiteral("忍住的金额"),"monthlyResistedAmountLabel");
     stats->setToolTip(QStringLiteral("按消费日期统计支出；忍住记录按本机时区统计，其金额不代表实际收入。"));
-    layout->addWidget(stats);
+    layout->insertWidget(1,stats);
 
     QFrame *boards; auto *boardsLayout=ShellWidgets::card(this,&boards);
     boards->setObjectName("monthlyReviewBoardsCard"); boardsLayout->setContentsMargins(26,16,26,8); boardsLayout->setSpacing(12);
@@ -121,18 +119,14 @@ MonthlyReviewWidget::MonthlyReviewWidget(DatabaseManager &database,const QString
     m_regret=new QWidget(boards); m_regret->setObjectName("monthlyRegretBoard");
     for (auto *page:{m_worth,m_regret}) { auto *rows=new QVBoxLayout(page); rows->setContentsMargins(0,0,0,0); rows->setSpacing(0); boardsLayout->addWidget(page); }
     layout->addWidget(boards);
+    m_achievements=new AchievementWall(database,this);
+    layout->addWidget(m_achievements);
     const auto selectBoard=[this](int index) {
         m_worth->setVisible(index==0); m_regret->setVisible(index==1);
     };
     connect(m_worthTab,&QPushButton::clicked,this,[selectBoard] { selectBoard(0); });
     connect(m_regretTab,&QPushButton::clicked,this,[selectBoard] { selectBoard(1); }); selectBoard(0);
 
-    auto *links=new QHBoxLayout; links->addStretch(); links->setSpacing(20);
-    auto *purchase=new QPushButton(QStringLiteral("购买后复盘 ↗"),this); purchase->setObjectName("monthlyPurchaseReviewButton"); purchase->setProperty("reviewLink",true);
-    auto *statistics=new QPushButton(QStringLiteral("年度与分类统计 ↗"),this); statistics->setObjectName("monthlyStatisticsButton"); statistics->setProperty("reviewLink",true);
-    links->addWidget(purchase); links->addWidget(statistics); layout->addLayout(links);
-    connect(purchase,&QPushButton::clicked,this,&MonthlyReviewWidget::purchaseReviewRequested);
-    connect(statistics,&QPushButton::clicked,this,[this] { emit statisticsRequested(m_month->date()); });
     m_error=ShellWidgets::label(QString(),story,"error"); m_error->setObjectName("monthlyReviewErrorLabel"); m_error->hide(); storyLayout->addWidget(m_error);
     connect(m_prev,&QPushButton::clicked,this,[this] { const auto date=MonthlyBudget::firstDay(m_month->date()).addMonths(-1); if (date.isValid()) m_month->setDate(date); });
     connect(m_next,&QPushButton::clicked,this,[this] { const auto date=MonthlyBudget::firstDay(m_month->date()).addMonths(1); if (date.isValid()) m_month->setDate(date); });
@@ -145,7 +139,7 @@ MonthlyReviewWidget::MonthlyReviewWidget(DatabaseManager &database,const QString
     connect(&m_ai,&AIService::failed,this,[this](const QString &error) { m_busy=false; m_error->setText(error); m_error->show(); updateControls(); });
     connect(&m_ai,&AIService::monthlyReady,this,[this](const MonthlyAnalysis &analysis) { m_busy=false; if (!m_repository.saveStory(m_requestedMonth,m_requestedHash,analysis.story,analysis.persona,"ai")) { m_error->setText(m_repository.lastError()); m_error->show(); updateControls(); return; } refresh(); }); updateControls();
 }
-void MonthlyReviewWidget::setDatabaseAvailable(bool available) { m_available=available; if (available) refresh(); else cancelAnalysis(); updateControls(); }
+void MonthlyReviewWidget::setDatabaseAvailable(bool available) { m_available=available; m_achievements->setDatabaseAvailable(available); if (available) refresh(); else cancelAnalysis(); updateControls(); }
 void MonthlyReviewWidget::cancelAnalysis() { m_ai.cancel(); m_busy=false; updateControls(); }
 bool MonthlyReviewWidget::refresh()
 {
@@ -174,7 +168,6 @@ void MonthlyReviewWidget::updateControls()
     m_tags->setEnabled(ready && !m_data.expenses.isEmpty());
     m_generate->setText(m_busy?QStringLiteral("生成中…"):m_story.id?QStringLiteral("重新生成"):QStringLiteral("生成本月故事"));
     m_generate->setVisible(m_busy || (ready && m_data.hasData() && !m_story.id));
-    m_dueReviews->setEnabled(ready);
 }
 void MonthlyReviewWidget::render()
 {
@@ -183,11 +176,6 @@ void MonthlyReviewWidget::render()
     m_saved->setText(Transaction::formatAmount(m_data.savingsCents));
     m_personaBadge->setText(QStringLiteral("本月故事")); m_previousStory->hide();
     m_fullStory.clear(); m_storyInterlude.clear(); m_storyNextStep.clear();
-    ReviewRepository reviews(m_database); qint64 due=0;
-    if (reviews.dueCount(due)) {
-        m_dueReviews->setText(QStringLiteral("%1 项购买后复盘到期 · 去复盘 →").arg(due));
-        m_dueReviews->setVisible(due>0);
-    } else m_dueReviews->hide();
     if (m_data.hasData()) {
         const auto preview=MonthlyStoryTemplate::local(m_data);
         m_personaBadge->setText(MonthlyStoryTemplate::personaSymbol(preview.personaId)+" "+MonthlyStoryTemplate::personaCaption(preview));
@@ -233,7 +221,7 @@ void MonthlyReviewWidget::render()
         m_source->setVisible(m_data.hasData());
         AppTheme::setTone(m_source,"muted");
     }
-    renderStoryBody(); renderBoards();
+    renderStoryBody(); renderBoards(); m_achievements->refresh();
 }
 void MonthlyReviewWidget::renderStoryBody()
 {
@@ -241,7 +229,7 @@ void MonthlyReviewWidget::renderStoryBody()
     const bool expanded=canExpand && m_expandStory->isChecked();
     const QString text=expanded || m_fullStory.size()<=100?m_fullStory:m_fullStory.left(100).trimmed()+QStringLiteral("…");
     m_storyText->setTextFormat(Qt::RichText);
-    m_storyText->setText(QStringLiteral("<div style='line-height:160%'>%1</div>").arg(text.toHtmlEscaped().replace('\n',QStringLiteral("<br>"))));
+    m_storyText->setText(QStringLiteral("<p style='line-height:175%; margin-top:0; margin-bottom:0'>%1</p>").arg(text.toHtmlEscaped().replace('\n',QStringLiteral("<br>"))));
     m_interlude->setText(QStringLiteral("本月小插曲 · ")+m_storyInterlude);
     m_nextTask->setText(QStringLiteral("下个月的小任务 · ")+m_storyNextStep);
     m_interlude->setVisible(expanded && !m_storyInterlude.isEmpty());
@@ -302,9 +290,35 @@ void MonthlyReviewWidget::showPreviousStory()
 void MonthlyReviewWidget::manageTags()
 {
     if (!m_hasSnapshot || !m_available) return; auto *dialog=new QDialog(this); dialog->setObjectName("monthlyTagsDialog"); dialog->setWindowTitle(QStringLiteral("本月值得／后悔标记")); dialog->setAttribute(Qt::WA_DeleteOnClose); dialog->resize(760,570);
-    auto *layout=new QVBoxLayout(dialog); layout->addWidget(ShellWidgets::label(QStringLiteral("只记录你的评价，不重复改变品牌权重。"),dialog,"muted")); auto *table=new QTableWidget(m_data.expenses.size(),4,dialog); table->setObjectName("monthlyTagTransactionsTable"); table->setHorizontalHeaderLabels({QStringLiteral("日期"),QStringLiteral("消费"),QStringLiteral("金额"),QStringLiteral("当前标记")}); table->setSelectionBehavior(QAbstractItemView::SelectRows); table->setSelectionMode(QAbstractItemView::SingleSelection); table->setEditTriggers(QAbstractItemView::NoEditTriggers); table->verticalHeader()->hide(); table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    auto *layout=new QVBoxLayout(dialog); layout->addWidget(ShellWidgets::label(QStringLiteral("标记值得或后悔的消费，留下自己的使用感受。"),dialog,"muted")); auto *table=new QTableWidget(m_data.expenses.size(),4,dialog); table->setObjectName("monthlyTagTransactionsTable"); table->setHorizontalHeaderLabels({QStringLiteral("日期"),QStringLiteral("消费"),QStringLiteral("金额"),QStringLiteral("当前标记")}); table->setSelectionBehavior(QAbstractItemView::SelectRows); table->setSelectionMode(QAbstractItemView::SingleSelection); table->setEditTriggers(QAbstractItemView::NoEditTriggers); table->verticalHeader()->hide(); table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     for (int i=0;i<m_data.expenses.size();++i) { const auto &expense=m_data.expenses[i]; const QStringList values={expense.date.toString(Qt::ISODate),expense.name,Transaction::formatAmount(expense.cents),expense.tag==1?QStringLiteral("值得"):expense.tag==-1?QStringLiteral("后悔"):QStringLiteral("未标记")}; for (int j=0;j<values.size();++j) table->setItem(i,j,new QTableWidgetItem(values[j])); table->item(i,0)->setData(Qt::UserRole,expense.id); table->item(i,0)->setData(Qt::UserRole+1,expense.tag); table->item(i,0)->setData(Qt::UserRole+2,expense.note); } layout->addWidget(table,1);
     auto *tag=new ModernComboBox(dialog); tag->setObjectName("monthlyTagComboBox"); tag->addItem(QStringLiteral("值得"),1); tag->addItem(QStringLiteral("后悔"),-1); tag->addItem(QStringLiteral("清除标记"),0); auto *note=new QLineEdit(dialog); note->setObjectName("monthlyTagNoteEdit"); note->setMaxLength(500); auto *form=new QFormLayout; form->addRow(QStringLiteral("个人标记"),tag); form->addRow(QStringLiteral("理由（可选）"),note); layout->addLayout(form); auto *status=ShellWidgets::label(QString(),dialog); status->setObjectName("monthlyTagStatusLabel"); layout->addWidget(status); auto *save=new QPushButton(QStringLiteral("保存所选消费的标记"),dialog); save->setObjectName("saveMonthlyTagButton"); save->setEnabled(false); auto *close=new QPushButton(QStringLiteral("完成"),dialog); auto *buttons=new QHBoxLayout; buttons->addWidget(close); buttons->addStretch(); buttons->addWidget(save); layout->addLayout(buttons); connect(close,&QPushButton::clicked,dialog,&QDialog::accept);
-    connect(table,&QTableWidget::itemSelectionChanged,dialog,[table,tag,note,save] { const int row=table->currentRow(); const bool selected=row>=0 && table->item(row,0) && table->item(row,0)->isSelected(); save->setEnabled(selected); if (!selected) return; tag->setCurrentIndex(tag->findData(table->item(row,0)->data(Qt::UserRole+1))); note->setText(table->item(row,0)->data(Qt::UserRole+2).toString()); });
-    connect(save,&QPushButton::clicked,dialog,[this,table,tag,note,status] { const int row=table->currentRow(); if (row<0 || !table->item(row,0)->isSelected()) return; const auto id=table->item(row,0)->data(Qt::UserRole).toLongLong(); const int value=tag->currentData().toInt(); if (!m_repository.setTag(id,value,note->text())) { status->setText(m_repository.lastError()); AppTheme::setTone(status,"danger"); return; } table->item(row,0)->setData(Qt::UserRole+1,value); table->item(row,0)->setData(Qt::UserRole+2,note->text()); table->item(row,3)->setText(value==1?QStringLiteral("值得"):value==-1?QStringLiteral("后悔"):QStringLiteral("未标记")); status->setText(QStringLiteral("已保存，月度故事如已过期会提示更新。")); AppTheme::setTone(status,"success"); refresh(); emit tagsChanged(); }); dialog->open();
+    const int suggestedTag=m_regretTab->isChecked()?-1:1;
+    tag->setCurrentIndex(tag->findData(suggestedTag));
+    connect(table,&QTableWidget::itemSelectionChanged,dialog,[table,tag,note,save,suggestedTag] {
+        const int row=table->currentRow();
+        const bool selected=row>=0 && table->item(row,0) && table->item(row,0)->isSelected();
+        save->setEnabled(selected); if (!selected) return;
+        const int storedTag=table->item(row,0)->data(Qt::UserRole+1).toInt();
+        // An unmarked expense is a new rating, never an implicit clear action.
+        tag->setCurrentIndex(tag->findData(storedTag==0?suggestedTag:storedTag));
+        note->setText(table->item(row,0)->data(Qt::UserRole+2).toString());
+    });
+    connect(save,&QPushButton::clicked,dialog,[this,table,tag,note,status] {
+        const int row=table->currentRow(); if (row<0 || !table->item(row,0)->isSelected()) return;
+        const auto id=table->item(row,0)->data(Qt::UserRole).toLongLong(); const int value=tag->currentData().toInt();
+        if (!m_repository.setTag(id,value,note->text())) { status->setText(m_repository.lastError()); AppTheme::setTone(status,"danger"); return; }
+        table->item(row,0)->setData(Qt::UserRole+1,value); table->item(row,0)->setData(Qt::UserRole+2,note->text());
+        table->item(row,3)->setText(value==1?QStringLiteral("值得"):value==-1?QStringLiteral("后悔"):QStringLiteral("未标记"));
+        if (refresh()) {
+            if (value!=0) (value==1?m_worthTab:m_regretTab)->click();
+            status->setText(value==0?QStringLiteral("已清除标记，榜单已更新。"):
+                QStringLiteral("已标记为「%1」，榜单已更新。").arg(value==1?QStringLiteral("值得"):QStringLiteral("后悔")));
+            AppTheme::setTone(status,"success");
+        } else {
+            status->setText(QStringLiteral("标记已保存，但榜单刷新失败，请关闭此窗口后重试。"));
+            AppTheme::setTone(status,"danger");
+        }
+        emit tagsChanged();
+    }); dialog->open();
 }

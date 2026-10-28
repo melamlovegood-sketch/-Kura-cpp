@@ -1,5 +1,10 @@
 <RCC>
+  <qresource prefix="/icons"><file alias="check.svg">icons/check.svg</file><file alias="check-inverse.svg">icons/check-inverse.svg</file><file alias="kura.ico">icons/kura.ico</file></qresource>
   <qresource prefix="/fonts">
+    <file alias="SourceHanSansCN-VF.otf">fonts/SourceHanSansCN-VF.otf</file>
+    <file alias="LXGWWenKaiLite-Regular.ttf">fonts/LXGWWenKaiLite-Regular.ttf</file>
+    <file alias="SourceHanSans-OFL.txt">fonts/SourceHanSans-OFL.txt</file>
+    <file alias="LXGWWenKai-OFL.txt">fonts/LXGWWenKai-OFL.txt</file>
     <file alias="DMSans.ttf">fonts/DMSans.ttf</file>
     <file alias="DMSans-Italic.ttf">fonts/DMSans-Italic.ttf</file>
     <file alias="DMSerifDisplay-Regular.ttf">fonts/DMSerifDisplay-Regular.ttf</file>

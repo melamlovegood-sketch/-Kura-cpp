@@ -87,7 +87,9 @@ bool checkSchema(const QSqlDatabase &database, QString &error)
     }
     const QSet<QString> required = {QStringLiteral("transactions"), QStringLiteral("monthly_budgets"), QStringLiteral("wishlist")};
     QSet<QString> workflowNames; for (const auto &table:WorkflowSchema::tables()) workflowNames.insert(table.name);
+    const auto legacyWorkflowNames=workflowNames-QSet<QString>{"execution_wishes"};
     QSet<QString> supplementNames; for (const auto &table:SupplementSchema::tables()) supplementNames.insert(table.name);
+    const QSet<QString> legacySupplementNames=supplementNames-QSet<QString>{"achievement_marks"};
     QSet<QString> productNames; for (const auto &table:ProductSchema::tables()) productNames.insert(table.name);
     const QSet<QString> allowed = productNames + required + QSet<QString>{QStringLiteral("wish_pools"), QStringLiteral("savings_records")} + workflowNames + supplementNames;
     QSet<QString> found;
@@ -104,8 +106,8 @@ bool checkSchema(const QSqlDatabase &database, QString &error)
         error = QStringLiteral("请选择包含消费、预算和愿望清单的 Kura 完整备份。");
         return false;
     }
-    if (!(found & workflowNames).isEmpty() && (!(workflowNames-found).isEmpty() || !found.contains("wish_pools"))) { error=QStringLiteral("备份中的第三步业务表不完整。"); return false; }
-    if (!(found & supplementNames).isEmpty() && (!(supplementNames-found).isEmpty() || !(workflowNames-found).isEmpty())) { error=QStringLiteral("备份中的导入和月度复盘表不完整。"); return false; }
+    if (!(found & workflowNames).isEmpty() && (!(legacyWorkflowNames-found).isEmpty() || !found.contains("wish_pools"))) { error=QStringLiteral("备份中的第三步业务表不完整。"); return false; }
+    if (!(found & supplementNames).isEmpty() && (!(legacySupplementNames-found).isEmpty() || !(legacyWorkflowNames-found).isEmpty())) { error=QStringLiteral("备份中的导入和月度复盘表不完整。"); return false; }
     const QSet<QString> listNames={"wishlist_price_links","wishlist_order"};
     const auto legacyProducts=productNames-listNames;
     if ((!(found & legacyProducts).isEmpty() && !(legacyProducts-found).isEmpty()) || (!(found & listNames).isEmpty() && !(listNames-found).isEmpty())) { error=QStringLiteral("备份中的商品资料表不完整。"); return false; }
@@ -142,7 +144,7 @@ bool checkSchema(const QSqlDatabase &database, QString &error)
         }
         QSet<QString> optional;
         if (schema.first == QStringLiteral("transactions"))
-            optional = {QStringLiteral("occurred_time"), QStringLiteral("note"), QStringLiteral("detail_category"), QStringLiteral("source_image")};
+            optional = {QStringLiteral("occurred_time"), QStringLiteral("note"), QStringLiteral("detail_category"), QStringLiteral("source_image"),QStringLiteral("purpose_category"),QStringLiteral("budget_scope")};
         if (schema.first == QStringLiteral("wishlist")) optional = {QStringLiteral("priority"),QStringLiteral("detail_category"),QStringLiteral("source_image")};
         if (schema.first == QStringLiteral("monthly_budgets")) optional = {QStringLiteral("basic_limit_cents"),QStringLiteral("discretionary_limit_cents")};
         if (!(schema.second - columns).isEmpty()) {
@@ -160,7 +162,7 @@ bool validateData(DatabaseManager &database, BackupInfo &info, QString &error)
 {
     QSqlQuery types(database.database());
     const QStringList invalidTypeQueries = {
-        QStringLiteral("SELECT 1 FROM transactions WHERE typeof(id)!='integer' OR typeof(amount_cents)!='integer' OR typeof(description)!='text' OR typeof(category)!='text' OR typeof(date)!='text' OR typeof(occurred_time)!='text' OR typeof(note)!='text' OR typeof(detail_category)!='text' OR typeof(source_image)!='blob' OR length(source_image)>2097152 LIMIT 1"),
+        QStringLiteral("SELECT 1 FROM transactions WHERE typeof(id)!='integer' OR typeof(amount_cents)!='integer' OR typeof(description)!='text' OR typeof(category)!='text' OR typeof(date)!='text' OR typeof(occurred_time)!='text' OR typeof(note)!='text' OR typeof(detail_category)!='text' OR typeof(source_image)!='blob' OR typeof(purpose_category)!='text' OR typeof(budget_scope)!='text' OR length(source_image)>2097152 LIMIT 1"),
         QStringLiteral("SELECT 1 FROM monthly_budgets WHERE typeof(month)!='text' OR typeof(limit_cents)!='integer' OR (basic_limit_cents IS NOT NULL AND typeof(basic_limit_cents)!='integer') OR (discretionary_limit_cents IS NOT NULL AND typeof(discretionary_limit_cents)!='integer') LIMIT 1"),
         QStringLiteral("SELECT 1 FROM wishlist WHERE typeof(id)!='integer' OR typeof(estimated_cents)!='integer' OR typeof(cooling_days)!='integer' OR typeof(priority)!='integer' OR typeof(created_ms)!='integer' OR typeof(ready_ms)!='integer' OR typeof(status)!='integer' OR typeof(name)!='text' OR typeof(category)!='text' OR typeof(reason)!='text' OR typeof(detail_category)!='text' OR typeof(source_image)!='blob' OR length(source_image)>2097152 OR (closed_ms IS NOT NULL AND typeof(closed_ms)!='integer') OR (transaction_id IS NOT NULL AND typeof(transaction_id)!='integer') LIMIT 1")};
     for (const auto &statement : invalidTypeQueries) {
@@ -339,7 +341,7 @@ bool DatabaseBackupService::restorePrepared(QString &safetyBackup, QString &erro
     safetyBackup = before;
     QStringList statements = {
         QStringLiteral("DELETE FROM main.savings_records"), QStringLiteral("DELETE FROM main.wish_pools"), QStringLiteral("DELETE FROM main.wishlist"), QStringLiteral("DELETE FROM main.monthly_budgets"), QStringLiteral("DELETE FROM main.transactions"),
-        QStringLiteral("INSERT INTO main.transactions(id,description,amount_cents,category,date,occurred_time,note,detail_category,source_image) SELECT id,description,amount_cents,category,date,occurred_time,note,detail_category,source_image FROM kura_restore.transactions"),
+        QStringLiteral("INSERT INTO main.transactions(id,description,amount_cents,category,date,occurred_time,note,detail_category,source_image,purpose_category,budget_scope) SELECT id,description,amount_cents,category,date,occurred_time,note,detail_category,source_image,purpose_category,budget_scope FROM kura_restore.transactions"),
         QStringLiteral("INSERT INTO main.monthly_budgets(month,limit_cents,basic_limit_cents,discretionary_limit_cents) SELECT month,limit_cents,basic_limit_cents,discretionary_limit_cents FROM kura_restore.monthly_budgets"),
         QStringLiteral("INSERT INTO main.wishlist(id,name,estimated_cents,category,cooling_days,reason,created_ms,ready_ms,status,closed_ms,transaction_id,priority,detail_category,source_image) SELECT id,name,estimated_cents,category,cooling_days,reason,created_ms,ready_ms,status,closed_ms,transaction_id,priority,detail_category,source_image FROM kura_restore.wishlist"),
         QStringLiteral("INSERT INTO main.wish_pools(id,wish_id,name,target_cents,created_ms,closed_ms) SELECT id,wish_id,name,target_cents,created_ms,closed_ms FROM kura_restore.wish_pools"),
@@ -347,6 +349,10 @@ bool DatabaseBackupService::restorePrepared(QString &safetyBackup, QString &erro
         QStringLiteral("DELETE FROM main.sqlite_sequence WHERE name IN ('transactions','wishlist','wish_pools','savings_records','shopping_rules','brands','execution_sessions','review_tasks','price_tracks','price_records','bill_import_keys','transaction_reviews','monthly_stories','product_profiles','product_links','product_evidence')"),
         QStringLiteral("INSERT INTO main.sqlite_sequence(name,seq) SELECT name,seq FROM kura_restore.sqlite_sequence WHERE name IN ('transactions','wishlist','wish_pools','savings_records','shopping_rules','brands','execution_sessions','review_tasks','price_tracks','price_records','bill_import_keys','transaction_reviews','monthly_stories','product_profiles','product_links','product_evidence')")};
     QStringList workflowDeletes,workflowInserts;
+    workflowDeletes << "DELETE FROM main.execution_wishes";
+    workflowDeletes << "DELETE FROM main.achievement_marks";
+    statements[statements.size()-2].replace("'monthly_stories'","'monthly_stories','achievement_marks'");
+    statements[statements.size()-1].replace("'monthly_stories'","'monthly_stories','achievement_marks'");
     for (const auto &name:{QStringLiteral("wishlist_order"),QStringLiteral("wishlist_price_links"),QStringLiteral("product_evidence"),QStringLiteral("product_links"),QStringLiteral("product_profiles"),QStringLiteral("bill_import_keys"),QStringLiteral("transaction_reviews"),QStringLiteral("monthly_stories"),QStringLiteral("review_tasks"),QStringLiteral("price_records"),QStringLiteral("execution_sessions"),QStringLiteral("brands"),QStringLiteral("shopping_rules"),QStringLiteral("price_tracks")}) workflowDeletes << "DELETE FROM main."+name;
     for (const auto &table:WorkflowSchema::tables()+SupplementSchema::tables()+ProductSchema::tables()) { const auto fields=table.columns.join(','); workflowInserts << "INSERT INTO main."+table.name+"("+fields+") SELECT "+fields+" FROM kura_restore."+table.name; }
     // Insert new business rows before restoring all AUTOINCREMENT sequences.

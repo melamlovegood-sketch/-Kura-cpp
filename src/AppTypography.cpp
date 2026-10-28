@@ -45,7 +45,8 @@ void AppTypography::initialize()
 {
     static const bool loaded = [] {
         initializeTypographyResources();
-        for (const auto &file : {"DMSans.ttf", "DMSans-Italic.ttf", "DMSerifDisplay-Regular.ttf", "DMSerifDisplay-Italic.ttf"})
+        for (const auto &file : {"DMSans.ttf", "DMSans-Italic.ttf", "DMSerifDisplay-Regular.ttf", "DMSerifDisplay-Italic.ttf",
+                                 "SourceHanSansCN-VF.otf", "LXGWWenKaiLite-Regular.ttf"})
             QFontDatabase::addApplicationFont(QStringLiteral(":/fonts/") + QLatin1String(file));
 #ifdef Q_OS_WIN
         // The offscreen Qt platform omits Windows TTC collections. Register the
@@ -80,7 +81,10 @@ QFont AppTypography::resolved(QFont font)
         font.setVariableAxis(QFont::Tag("wght"), float(font.weight()));
         font.setVariableAxis(QFont::Tag("opsz"), qBound(9.f, pixels, 40.f));
     } else {
+        // The Latin display face is static, but its Chinese UI fallback is a
+        // variable face whose default axis is ExtraLight. Pin its real weight.
         font.clearVariableAxes();
+        font.setVariableAxis(QFont::Tag("wght"), float(font.weight()));
     }
     return font;
 }
@@ -89,7 +93,7 @@ QFont AppTypography::sans(int pixels, QFont::Weight weight)
 {
     initialize();
     QFont font;
-    font.setFamilies({QStringLiteral("DM Sans"), QStringLiteral("Microsoft YaHei")});
+    font.setFamilies({QStringLiteral("DM Sans"), QStringLiteral("Source Han Sans CN VF"), QStringLiteral("Microsoft YaHei"), QStringLiteral("PingFang SC")});
     font.setPixelSize(pixels); font.setWeight(weight);
     return resolved(font);
 }
@@ -98,7 +102,16 @@ QFont AppTypography::serif(int pixels)
 {
     initialize();
     QFont font;
-    font.setFamilies({QStringLiteral("DM Serif Display"), QStringLiteral("Georgia"), QStringLiteral("SimSun")});
+    font.setFamilies({QStringLiteral("DM Serif Display"), QStringLiteral("Source Han Sans CN VF"), QStringLiteral("Microsoft YaHei")});
+    font.setPixelSize(pixels); font.setWeight(QFont::Normal);
+    return resolved(font);
+}
+
+QFont AppTypography::editorial(int pixels)
+{
+    initialize();
+    QFont font;
+    font.setFamilies({QStringLiteral("DM Serif Display"), QStringLiteral("LXGW WenKai Lite"), QStringLiteral("Source Han Sans CN VF")});
     font.setPixelSize(pixels); font.setWeight(QFont::Normal);
     return resolved(font);
 }

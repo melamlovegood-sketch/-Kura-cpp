@@ -2,7 +2,12 @@
 #include <QStackedWidget>
 #include "WishlistRepository.h"
 #include "WishlistWidget.h"
+#include "ProductDetailsDialog.h"
+#include <QToolButton>
 #include "WishDialog.h"
+#include "DecisionDialog.h"
+#include "ExecutionWidget.h"
+#include "HomeWidget.h"
 #include "AddTransactionDialog.h"
 #include "DatabaseManager.h"
 #include "TransactionRepository.h"
@@ -60,6 +65,7 @@ static QString text(QWidget &widget, const char *name)
 }
 static void fill(WishDialog &dialog, const QString &name, double amount, int days = 1)
 {
+    button(dialog,"wishPriority2Button")->click();
     dialog.findChild<QLineEdit *>(QStringLiteral("wishNameEdit"))->setText(name);
     dialog.findChild<QDoubleSpinBox *>(QStringLiteral("wishAmountSpinBox"))->setValue(amount);
     dialog.findChild<QSpinBox *>(QStringLiteral("wishDaysSpinBox"))->setValue(days);
@@ -78,7 +84,72 @@ private slots:
     void countdownAndFilters();
     void purchaseUpdatesWindow();
     void widgetFailuresAndRetry();
+    void priorityIsRequiredAndSharedAcrossPages();
 };
+
+void WishlistTests::priorityIsRequiredAndSharedAcrossPages()
+{
+    QTemporaryDir dir; const auto path=dir.filePath("priority-pages.sqlite");
+    DatabaseManager db(path); QVERIFY(db.initialize()); WishlistRepository repository(db);
+    WishDialog entry; entry.show(); settle();
+    entry.findChild<QLineEdit *>("wishNameEdit")->setText(QStringLiteral("新耳机"));
+    entry.findChild<QDoubleSpinBox *>("wishAmountSpinBox")->setValue(99);
+    QSignalSpy save(&entry,&WishDialog::saveRequested);
+    button(entry,"saveWishButton")->click(); QCOMPARE(save.count(),0);
+    QVERIFY(text(entry,"wishValidationError").contains(QStringLiteral("有多需要")));
+    QVERIFY(button(entry,"wishPriority1Button")->isVisible());
+    QTest::mouseClick(button(entry,"wishPriority1Button"),Qt::LeftButton);
+    button(entry,"saveWishButton")->click(); QCOMPARE(save.count(),1);
+    auto item=entry.item(); QCOMPARE(item.priority,1);
+    const auto now=QDateTime::currentDateTimeUtc();
+    QVERIFY(repository.add(item,now.addDays(-7))); entry.completeSave();
+    auto low=wish(QStringLiteral("更新但低优先")); low.priority=3; QVERIFY(repository.add(low,now.addDays(-3)));
+    auto medium=wish(QStringLiteral("中优先")); medium.priority=2; QVERIFY(repository.add(medium,now.addDays(-4)));
+    auto high=wish(QStringLiteral("另一个高优先")); high.priority=1; QVERIFY(repository.add(high,now.addDays(-5)));
+    auto cooling=wish(QStringLiteral("高优先仍在冷静")); cooling.priority=1; QVERIFY(repository.add(cooling,now));
+    MainWindow window(path); window.resize(1180,860); window.show(); settle();
+    auto *home=window.findChild<HomeWidget *>(); QVERIFY(home->refresh());
+    const auto homeRows=home->findChildren<QWidget *>("homeReadyRow"); QCOMPARE(homeRows.size(),2);
+    QCOMPARE(homeRows[0]->findChild<QPushButton *>("homeReadyWishButton")->property("wishId").toLongLong(),item.id);
+    QCOMPARE(homeRows[1]->findChild<QPushButton *>("homeReadyWishButton")->property("wishId").toLongLong(),high.id);
+    auto *execution=window.findChild<ExecutionWidget *>(); QVERIFY(execution->refreshReferences());
+    const auto executionRows=execution->findChildren<QWidget *>("executionPendingRow"); QCOMPARE(executionRows.size(),3);
+    QCOMPARE(executionRows[0]->findChild<QPushButton *>("executionPendingOpenButton")->property("wishId").toLongLong(),high.id);
+    QCOMPARE(executionRows[1]->findChild<QPushButton *>("executionPendingOpenButton")->property("wishId").toLongLong(),item.id);
+    QCOMPARE(executionRows[2]->findChild<QPushButton *>("executionPendingOpenButton")->property("wishId").toLongLong(),medium.id);
+    auto *list=window.findChild<WishlistWidget *>(); QVERIFY(list->refresh());
+    auto *table=list->findChild<QTableWidget *>("wishlistTable");
+    QCOMPARE(table->item(0,0)->data(Qt::UserRole).toLongLong(),cooling.id);
+    QCOMPARE(table->item(3,0)->data(Qt::UserRole).toLongLong(),medium.id);
+    QCOMPARE(table->item(4,0)->data(Qt::UserRole).toLongLong(),low.id);
+    QVERIFY(list->findChild<QAction *>("wishlistSortPriorityAction")->isChecked());
+    // A deliberate alternate order persists, and priority order can be restored.
+    list->findChild<QAction *>("wishlistSortNewestAction")->trigger();
+    QCOMPARE(table->item(1,0)->data(Qt::UserRole).toLongLong(),low.id);
+    WishlistWidget reopened(db); reopened.setDatabaseAvailable(true);
+    QVERIFY(reopened.findChild<QAction *>("wishlistSortNewestAction")->isChecked());
+    list->findChild<QAction *>("wishlistSortPriorityAction")->trigger();
+    WishlistWidget restored(db); restored.setDatabaseAvailable(true);
+    QVERIFY(restored.findChild<QAction *>("wishlistSortPriorityAction")->isChecked());
+    WishDialog edit(item); QVERIFY(button(edit,"wishPriority1Button")->isChecked());
+    button(edit,"wishPriority3Button")->click(); edit.reject();
+    QList<WishItem> saved; QVERIFY(repository.findAll(saved));
+    for (const auto &value:saved) if (value.id==item.id) QCOMPARE(value.priority,1);
+    DecisionDialog intake(db,AISettings{}); intake.show();
+    intake.findChild<QPlainTextEdit *>("decisionInput")->setPlainText(QStringLiteral("录入后加入清单"));
+    button(intake,"decisionManualButton")->click();
+    intake.findChild<QDoubleSpinBox *>("decisionAmountSpinBox")->setValue(199);
+    button(intake,"decisionContinueButton")->click(); button(intake,"decisionWishButton")->click();
+    QSignalSpy committed(&intake,&DecisionDialog::committed);
+    button(intake,"decisionCommitButton")->click(); QCOMPARE(committed.count(),0);
+    QVERIFY(repository.findAll(saved)); QCOMPARE(saved.size(),5);
+    QVERIFY(button(intake,"decisionWishPriority1Button")->isVisible());
+    QTest::mouseClick(button(intake,"decisionWishPriority1Button"),Qt::LeftButton);
+    button(intake,"decisionCommitButton")->click(); QCOMPARE(committed.count(),1);
+    QVERIFY(repository.findAll(saved)); QCOMPARE(saved.size(),6);
+    for (const auto &value:saved) if (value.name==QStringLiteral("录入后加入清单")) QCOMPARE(value.priority,1);
+    TransactionRepository transactions(db); QList<Transaction> expenses; QVERIFY(transactions.findAll(expenses)); QVERIFY(expenses.isEmpty());
+}
 
 void WishlistTests::timingAndValidation()
 {
@@ -310,7 +381,9 @@ void WishlistTests::dialogCrudAndRestart()
         const qint64 id = table->item(0, 0)->data(Qt::UserRole).toLongLong();
         table->selectRow(0);
         QVERIFY(!button(window, "purchaseWishButton")->isEnabled());
-        window.findChild<QAction *>("editWishAction")->trigger();
+        button(window,"wishProductInfoButton")->click();
+        settle();
+        button(window,"editWishDetailsButton")->click();
         settle();
         dialog = window.findChild<WishDialog *>();
         QVERIFY(dialog);
@@ -318,7 +391,9 @@ void WishlistTests::dialogCrudAndRestart()
         button(*dialog, "cancelWishButton")->click();
         settle();
         QCOMPARE(table->item(0, 0)->text(), QStringLiteral("耳机"));
-        window.findChild<QAction *>("editWishAction")->trigger();
+        button(window,"wishProductInfoButton")->click();
+        settle();
+        button(window,"editWishDetailsButton")->click();
         settle();
         dialog = window.findChild<WishDialog *>();
         QVERIFY(dialog);
@@ -327,15 +402,15 @@ void WishlistTests::dialogCrudAndRestart()
         settle();
         QCOMPARE(table->item(0, 0)->text(), QStringLiteral("键盘"));
         QCOMPARE(table->item(0, 0)->data(Qt::UserRole).toLongLong(), id);
-        window.findChild<QAction *>("abandonWishAction")->trigger();
+        table->cellWidget(0,0)->findChild<QToolButton *>("wishAbandonButton")->click();
         settle();
         auto *confirmation = window.findChild<QMessageBox *>();
         QVERIFY(confirmation);
         QCOMPARE(static_cast<QAbstractButton *>(confirmation->defaultButton()), confirmation->button(QMessageBox::No));
         confirmation->button(QMessageBox::No)->click();
         settle();
-        QVERIFY(window.findChild<QAction *>("abandonWishAction")->isEnabled());
-        window.findChild<QAction *>("abandonWishAction")->trigger();
+        QVERIFY(table->cellWidget(0,0)->findChild<QToolButton *>("wishAbandonButton")->isEnabled());
+        table->cellWidget(0,0)->findChild<QToolButton *>("wishAbandonButton")->click();
         settle();
         confirmation = window.findChild<QMessageBox *>();
         QVERIFY(confirmation);
@@ -344,7 +419,9 @@ void WishlistTests::dialogCrudAndRestart()
         QCOMPARE(table->item(0, 3)->text(), QStringLiteral("已放弃"));
         QVERIFY(window.findChild<QLabel *>(QStringLiteral("wishlistSummaryLabel"))->toolTip().contains(QStringLiteral("¥180.00")));
         QCOMPARE(window.findChild<QTableWidget *>(QStringLiteral("transactionTable"))->rowCount(), 0);
-        QVERIFY(!window.findChild<QAction *>("editWishAction")->isEnabled());
+        button(window,"wishProductInfoButton")->click(); settle();
+        QVERIFY(!window.findChild<QPushButton *>("editWishDetailsButton"));
+        window.findChild<ProductDetailsDialog *>()->reject(); settle();
     }
     MainWindow restarted(path); restarted.showPage(MainWindow::Page::Billing);
     restarted.findChild<QComboBox *>(QStringLiteral("wishlistStatusFilter"))->setCurrentIndex(0);
@@ -352,7 +429,7 @@ void WishlistTests::dialogCrudAndRestart()
     QCOMPARE(table->rowCount(), 1);
     QCOMPARE(table->item(0, 3)->text(), QStringLiteral("已放弃"));
     table->selectRow(0);
-    restarted.findChild<QAction *>("deleteWishAction")->trigger();
+    table->cellWidget(0,0)->findChild<QToolButton *>("wishAbandonButton")->click();
     settle();
     auto *confirmation = restarted.findChild<QMessageBox *>();
     QVERIFY(confirmation);
@@ -414,7 +491,6 @@ void WishlistTests::purchaseUpdatesWindow()
         window.show();
         window.findChild<QStackedWidget *>(QStringLiteral("mainPages"))->setCurrentIndex(2);
         window.findChild<QComboBox *>(QStringLiteral("wishlistStatusFilter"))->setCurrentIndex(0);
-        window.findChild<QSpinBox *>(QStringLiteral("statisticsYearSpinBox"))->setValue(QDate::currentDate().year());
         settle();
         auto *table = window.findChild<QTableWidget *>(QStringLiteral("wishlistTable"));
         table->selectRow(1);
@@ -449,7 +525,7 @@ void WishlistTests::purchaseUpdatesWindow()
         QCOMPARE(text(window, "totalExpenseLabel"), QStringLiteral("全部支出：¥250.00"));
         QCOMPARE(text(window, "budgetSpentLabel"), QStringLiteral("已消费：¥250.00"));
         QCOMPARE(text(window, "budgetRemainingLabel"), QStringLiteral("剩余额度：-¥50.00"));
-        QVERIFY(text(window, "yearExpenseLabel").contains(QStringLiteral("¥250.00")));
+        QCOMPARE(text(window, "billingMonthTotalLabel"),QStringLiteral("¥250.00"));
     }
     MainWindow restarted(path); restarted.showPage(MainWindow::Page::Billing);
     QCOMPARE(text(restarted, "totalExpenseLabel"), QStringLiteral("全部支出：¥250.00"));

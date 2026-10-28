@@ -1,6 +1,6 @@
 # Kura C++ Windows 运行包
 
-0.12.6 运行包包含 KuraCpp.exe、匹配的 Qt（含 Network）、Zlib 和 MinGW 依赖、平台与 SQLite／TLS 插件、Demo.cmd、虚构账单样例、使用说明、测试记录和页面截图。不含个人数据库、API Key 或测试程序。本次记账工作台见 BILLING_REFRESH.md，消费人格故事见 CONSUMER_PERSONALITIES.md，复盘界面见 REVIEW_REFRESH.md，导入与故事规则见 IMPORT_MONTHLY_REVIEW.md。
+0.12.6 运行包包含 KuraCpp.exe、匹配的 Qt（含 Network）、Zlib 和 MinGW 依赖、平台与 SQLite／TLS 插件、Demo.cmd、虚构账单样例、使用说明、测试记录和页面截图。常规包不含个人数据库、API Key 或测试程序；仅显式使用 `Build-Unified.ps1 -IncludeTrialAI` 的小组测试包携带项目方授权的共享 AI 配置，详见 [小组 AI 试用](TRIAL_AI.md)。本次记账工作台见 BILLING_REFRESH.md，消费人格故事见 CONSUMER_PERSONALITIES.md，复盘界面见 REVIEW_REFRESH.md，导入与故事规则见 IMPORT_MONTHLY_REVIEW.md。
 
 ## 本次构建环境
 
@@ -9,6 +9,10 @@
 Windows 11 x64，MSYS2 UCRT64，GCC 15.2，Qt 6.10.1，CMake 和 Ninja；源码编译另需匹配 Kit 的 Zlib 开发库。程序包使用 Release 构建；测试用独立临时数据库。
 
 ## 重新构建与打包
+
+根目录 CMD 入口使用 Windows PowerShell 5.1。含中文的 `.ps1` 脚本必须保存为 UTF-8 with BOM，避免中文引号被误读后触发解析错误。统一发布前会通过 `scripts/Test-LauncherCompatibility.ps1` 使用系统 PowerShell 5.1 检查所有构建／启动脚本的编码与语法；不能只在 PowerShell 7 中验证。
+
+「启动最新版／体验最新版」打开 `build/current.json` 指向的最近一份已验收运行包，并核对指针、清单与程序哈希。开发中的源码变化不会强制用户在启动时重新编译；使用「更新最新版」完成编译、完整回归与源码一致性检查后才替换固定入口。首次没有已验收运行包时才自动构建。`Start-Current.ps1 -CheckOnly` 仍严格检查运行包是否与当前源码一致，供发布验收使用。
 
 在匹配的 Qt Kit 中执行：
 

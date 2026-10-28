@@ -12,16 +12,13 @@ class QComboBox;
 class QCheckBox;
 class QDateEdit;
 class BudgetWidget;
-class StatisticsWidget;
 class QStackedWidget;
 class QToolButton;
 class HomeWidget;
 class AppearanceWidget;
 class ExecutionWidget;
-class ReviewWidget;
 class MonthlyReviewWidget;
 class PriceWidget;
-class QTabWidget;
 class WishlistWidget;
 class DataManagementWidget;
 class QBoxLayout;
@@ -43,11 +40,14 @@ public:
     bool reloadTransactions(qint64 selectedId = 0);
     void showPage(Page page);
     Page currentPage() const;
+    void startFirstRunGuide();
 
 protected:
     void resizeEvent(QResizeEvent *event) override;
 
 private:
+    void showOnboarding(bool resume=false);
+    bool m_guideShown = false;
     void buildShell();
     void applyTheme(const QString &theme, bool save);
     void updateNavigation();
@@ -55,7 +55,7 @@ private:
     void openDecisionDialog();
     void choosePoolGoal(qint64 wishId);
     void showError(const QString &message);
-    void openTransactionDialog(const Transaction *transaction = nullptr,bool purchase=false,qint64 sessionId=0,qint64 brandId=0);
+    void openTransactionDialog(const Transaction *transaction = nullptr,bool purchase=false,qint64 sessionId=0);
     void editSelectedTransaction();
     void deleteSelectedTransaction();
     void applyFilters();
@@ -74,7 +74,6 @@ private:
     BillingWorkspace *m_billingWorkspace = nullptr;
     QStackedWidget *m_billingPages = nullptr;
     QDialog *m_budgetDialog = nullptr;
-    StatisticsWidget *m_statisticsWidget = nullptr;
     QStackedWidget *m_pages = nullptr;
     HomeWidget *m_homeWidget = nullptr;
     AppearanceWidget *m_appearanceWidget = nullptr;
@@ -84,11 +83,9 @@ private:
     QWidget *m_homeActionBar = nullptr;
     QPushButton *m_homeDecision = nullptr;
     ExecutionWidget *m_executionWidget = nullptr;
-    ReviewWidget *m_reviewWidget = nullptr;
     MonthlyReviewWidget *m_monthlyReviewWidget = nullptr;
-    QTabWidget *m_reviewTabs = nullptr;
-    qint64 m_dueReviews = 0;
     QString m_theme;
+    QString m_themePreference;
     QString m_preferencesPath;
     WishlistWidget *m_wishlistWidget = nullptr;
     DataManagementWidget *m_dataWidget = nullptr;

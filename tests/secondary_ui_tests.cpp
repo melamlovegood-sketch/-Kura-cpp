@@ -7,7 +7,7 @@
 #include "ProductDetailsDialog.h"
 #include "PurchaseRepository.h"
 #include "ReviewWidget.h"
-#include "ShoppingProfileDialog.h"
+#include "ShoppingProfileRepository.h"
 #include "TransactionRepository.h"
 #include "WishDialog.h"
 #include "mainwindow.h"
@@ -51,14 +51,14 @@ private slots:
     void productReadingEditingAndDiscussion();
     void dataOperationsAndRestoreScope();
     void recordPageShowsOnlyFilteredSummary();
-    void reviewOpensOnClickAndFeedsBrandHistory();
-    void brandListAndSeparateEditor();
+    void reviewOpensOnClickWithoutChangingLegacyBrands();
     void importSelectionTools();
 };
 void SecondaryUiTests::wishOptionsAndCustomCooling()
 {
     QWidget host; host.resize(800,600); AppTheme::apply(&host,"warm"); host.show();
     WishItem original; original.name=QStringLiteral("通勤耳机"); original.estimatedCents=32900; original.coolingDays=5; original.priority=1; original.reason=QStringLiteral("地铁上使用"); original.detailCategory="online_shopping";
+    original.id=1;
     WishDialog dialog(original,&host); dialog.open(); settle();
     QVERIFY(!dialog.findChild<QWidget *>("wishMoreOptions")->isVisible());
     QVERIFY(dialog.findChild<QSpinBox *>("wishDaysSpinBox")->isVisible()); QCOMPARE(dialog.item().reason,original.reason);
@@ -126,7 +126,7 @@ void SecondaryUiTests::recordPageShowsOnlyFilteredSummary()
     QVERIFY(!window.findChild<QTableWidget *>("categorySummaryTable")->isVisible());
     for(const auto &theme:QStringList{"warm","cool","dark"}) { AppTheme::apply(&window,theme); capture(window,"records-"+theme); }
 }
-void SecondaryUiTests::reviewOpensOnClickAndFeedsBrandHistory()
+void SecondaryUiTests::reviewOpensOnClickWithoutChangingLegacyBrands()
 {
     QTemporaryDir dir; DatabaseManager database(dir.filePath("review.sqlite")); QVERIFY(database.initialize()); ShoppingProfileRepository brands(database); BrandEntry brand; brand.name="MUJI"; brand.category="online_shopping"; QVERIFY(brands.saveBrand(brand));
     Transaction expense(0,QStringLiteral("针织衫"),22800,QStringLiteral("购物"),QDate::currentDate().addDays(-40),QTime(12,0),{},"online_shopping"); PurchaseRepository purchases(database); QVERIFY(purchases.record(expense,brand.id));
@@ -134,18 +134,7 @@ void SecondaryUiTests::reviewOpensOnClickAndFeedsBrandHistory()
     auto *table=widget.findChild<QTableWidget *>("purchaseReviewTable"); QVERIFY(table->rowCount()>0); QTest::mouseClick(table->viewport(),Qt::LeftButton,Qt::NoModifier,table->visualItemRect(table->item(0,0)).center()); settle();
     auto *dialog=widget.findChild<QDialog *>("purchaseReviewDialog"); QVERIFY(dialog && dialog->isVisible());
     dialog->findChild<QComboBox *>("reviewFrequencyComboBox")->setCurrentIndex(3); dialog->findChild<QComboBox *>("reviewWorthinessComboBox")->setCurrentIndex(1); capture(*dialog,"review"); click(*dialog,"savePurchaseReviewButton");
-    QList<BrandEntry> loaded; QVERIFY(brands.loadBrands(loaded)); QCOMPARE(loaded.first().worthCount,1); QCOMPARE(loaded.first().regretCount,0); QCOMPARE(loaded.first().weight,1);
-}
-void SecondaryUiTests::brandListAndSeparateEditor()
-{
-    DatabaseManager database(":memory:"); QVERIFY(database.initialize()); ShoppingProfileDialog dialog(database); AppTheme::apply(&dialog,"warm"); dialog.show(); dialog.findChild<QTabWidget *>("shoppingProfileTabs")->setCurrentIndex(1); settle();
-    QVERIFY(!dialog.findChild<QLineEdit *>("brandNameEdit")); click(dialog,"newBrandButton"); auto *editor=dialog.findChild<QDialog *>("brandEditorDialog"); QVERIFY(editor && editor->isVisible());
-    editor->findChild<QLineEdit *>("brandNameEdit")->setText("MUJI"); QVERIFY(!editor->findChild<QSpinBox *>("brandWeightSpinBox")->isVisible()); click(*editor,"saveBrandButton");
-    auto *table=dialog.findChild<QTableWidget *>("brandTable"); QCOMPARE(table->rowCount(),1); QVERIFY(table->item(0,2)->text().contains(QStringLiteral("值得 0")));
-    click(dialog,"newBrandButton"); editor=dialog.findChild<QDialog *>("brandEditorDialog"); editor->findChild<QLineEdit *>("brandNameEdit")->setText("MUJI"); click(*editor,"saveBrandButton");
-    QVERIFY(editor->isVisible()); QVERIFY(editor->findChild<QLabel *>("brandEditorErrorLabel")->isVisible()); editor->reject(); settle();
-    table->selectRow(0); click(dialog,"editBrandButton"); editor=dialog.findChild<QDialog *>("brandEditorDialog"); QCOMPARE(editor->findChild<QLineEdit *>("brandNameEdit")->text(),QStringLiteral("MUJI")); editor->reject(); settle();
-    capture(dialog,"brands");
+    QList<BrandEntry> loaded; QVERIFY(brands.loadBrands(loaded)); QCOMPARE(loaded.first().worthCount,1); QCOMPARE(loaded.first().regretCount,0); QCOMPARE(loaded.first().weight,0);
 }
 void SecondaryUiTests::importSelectionTools()
 {

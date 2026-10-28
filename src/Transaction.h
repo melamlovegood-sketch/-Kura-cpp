@@ -15,7 +15,8 @@ public:
     Transaction(qint64 id, const QString &description, qint64 amountCents,
                 const QString &category, const QDate &date,
                 const QTime &time = {}, const QString &note = {},
-                const QString &detailCategory = {}, const QByteArray &sourceImage = {});
+                const QString &detailCategory = {}, const QByteArray &sourceImage = {},
+                const QString &purposeCategory = {}, const QString &budgetScope = {});
 
     qint64 id() const;
     QString description() const;
@@ -27,6 +28,9 @@ public:
     QString note() const;
     QString detailCategory() const;
     QByteArray sourceImage() const;
+    QString purposeCategory() const;
+    QString budgetScope() const;
+    bool isBasic() const;
 
     QString validationError() const;
     static QStringList categories();
@@ -42,4 +46,5 @@ private:
     QString m_note;
     QString m_detailCategory;
     QByteArray m_sourceImage;
+    QString m_purposeCategory, m_budgetScope;
 };

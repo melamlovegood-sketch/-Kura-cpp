@@ -18,6 +18,7 @@ struct CategoryExpense
 class CategorySummary
 {
 public:
+    static QList<CategoryExpense> calculatePurposes(const QList<Transaction> &transactions, const QDate &month);
     // Pass the complete, validated repository snapshot, never the filtered list.
     // Includes all six categories in Transaction::categories() order, even at zero.
     static QList<CategoryExpense> calculate(const QList<Transaction> &transactions,

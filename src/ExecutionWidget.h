@@ -17,6 +17,7 @@ class QBoxLayout;
 class QFrame;
 class QResizeEvent;
 class DecisionChatWidget;
+class PricePerspectiveHint;
 class ExecutionWidget:public QWidget {
     Q_OBJECT
 public:
@@ -24,12 +25,12 @@ public:
     void setDatabaseAvailable(bool available);
     bool refreshReferences();
     bool reloadState();
-    bool prepareDecision(const ParsedProduct &product,const QByteArray &image={},qint64 brandId=0,qint64 productId=0);
+    bool prepareDecision(const ParsedProduct &product,const QByteArray &image={},qint64 productId=0);
     qint64 activeSessionId() const { return m_session.id; }
 signals:
     void inputRequested(const QString &initialText);
     void wishlistRequested();
-    void purchaseRequested(const Transaction &draft,qint64 sessionId,qint64 brandId);
+    void purchaseRequested(const Transaction &draft,qint64 sessionId);
 protected:
     void resizeEvent(QResizeEvent *event) override;
 private:
@@ -49,6 +50,9 @@ private:
     void editRules(bool adding);
     void switchMode(const QString &mode);
     void openProductDetails();
+    bool refreshPending();
+    void decideWish(qint64 wishId);
+    qint64 m_draftWishId=0;
     qint64 m_draftProductId=0;
     QByteArray m_draftImage;
     QPushButton *m_productDetails,*m_activeProductDetails;
@@ -63,7 +67,7 @@ private:
     QLineEdit *m_name,*m_reviewName;
     QLineEdit *m_purpose;
     QDoubleSpinBox *m_amount;
-    QComboBox *m_category,*m_mode,*m_brands;
+    QComboBox *m_category,*m_mode;
     QSpinBox *m_minutes;
     QPlainTextEdit *m_brief,*m_notes;
     DecisionChatWidget *m_chat;
@@ -78,6 +82,11 @@ private:
     QToolButton *m_notesToggle,*m_rulesToggle;
     QWidget *m_notesBody,*m_duration,*m_references,*m_activeModes,*m_fastPanel,*m_decisionActions;
     QLabel *m_productTitle,*m_productPrice,*m_productPriceCaption,*m_productPurpose,*m_modeProduct,*m_budgetTitle,*m_budgetKind,*m_remaining,*m_after,*m_remainingCaption,*m_checkCount,*m_rules,*m_decisionHint;
-    QBoxLayout *m_productLayout,*m_choicesLayout;
+    QBoxLayout *m_productLayout,*m_choicesLayout,*m_introLayout;
     QFrame *m_budgetPanel,*m_rulesCard;
+    QWidget *m_suggestions,*m_pending;
+    QLabel *m_pendingSummary,*m_pendingEmpty;
+    struct PendingRow { QWidget *widget; QLabel *image,*name,*detail; QPushButton *open; };
+    QList<PendingRow> m_pendingRows;
+    PricePerspectiveHint *m_costHint,*m_modeCostHint;
 };

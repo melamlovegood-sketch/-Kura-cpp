@@ -41,7 +41,7 @@ bool BillImportRepository::commit(const BillParseResult &preview,BillImportOutco
     if (!validHash(preview.fileHash) || preview.fileName.size()>512) { m_error=QStringLiteral("导入预览缺少有效文件信息，请重新读取。"); return false; }
     for (const auto &row:preview.rows) if (row.selected) {
         if (row.state==BillDraft::Duplicate || row.state==BillDraft::Conflict || !row.confirmed || !validHash(row.key) || !validHash(row.payloadHash) || !validHash(row.fingerprint) || row.originalName.isEmpty() || row.originalName.size()>8000 || row.externalId.size()>256 || (row.platform!="wechat" && row.platform!="alipay" && row.platform!="kura")) { m_error=QStringLiteral("请先确认所选记录的分类，排除重复或冲突记录。"); return false; }
-        const auto error=Transaction(0,row.name,row.cents,CategoryCatalog::legacyCategory(row.category),row.date,row.time,row.note,row.category).validationError(); if (!error.isEmpty()) { m_error=QStringLiteral("第 %1 行：%2").arg(row.sourceRow).arg(error); return false; }
+        const auto error=Transaction(0,row.name,row.cents,CategoryCatalog::legacyCategory(row.category),row.date,row.time,row.note,row.category,{},row.purposeCategory,row.budgetScope).validationError(); if (!error.isEmpty()) { m_error=QStringLiteral("第 %1 行：%2").arg(row.sourceRow).arg(error); return false; }
     }
     WorkflowStorage::Transaction batch(m_database.database(),m_error); if (!batch.ok()) return false;
     QSqlQuery query(m_database.database()); TransactionRepository expenses(m_database);
@@ -52,7 +52,7 @@ bool BillImportRepository::commit(const BillParseResult &preview,BillImportOutco
         query.prepare("INSERT INTO bill_import_keys(import_key,payload_hash,fingerprint,platform,external_id,file_hash,source_file,original_name,imported_ms) VALUES(:key,:payload,:fp,:platform,:external,:file,:source,:original,:now)");
         query.bindValue(":key",row.key); query.bindValue(":payload",row.payloadHash); query.bindValue(":fp",row.fingerprint); query.bindValue(":platform",row.platform); query.bindValue(":external",row.externalId.isNull()?QStringLiteral(""):row.externalId); query.bindValue(":file",preview.fileHash); query.bindValue(":source",preview.fileName.isNull()?QStringLiteral(""):preview.fileName); query.bindValue(":original",row.originalName); query.bindValue(":now",QDateTime::currentMSecsSinceEpoch());
         if (!query.exec()) { m_error=WorkflowStorage::error(query.lastError()); return false; } const auto keyId=query.lastInsertId().toLongLong(); query.finish();
-        Transaction expense(0,row.name,row.cents,CategoryCatalog::legacyCategory(row.category),row.date,row.time,row.note,row.category);
+        Transaction expense(0,row.name,row.cents,CategoryCatalog::legacyCategory(row.category),row.date,row.time,row.note,row.category,{},row.purposeCategory,row.budgetScope);
         if (!expenses.add(expense)) { m_error=expenses.lastError(); return false; }
         query.prepare("UPDATE bill_import_keys SET transaction_id=:expense WHERE id=:id"); query.bindValue(":expense",expense.id()); query.bindValue(":id",keyId); if (!query.exec() || query.numRowsAffected()!=1) { m_error=WorkflowStorage::error(query.lastError()); return false; } query.finish();
         ++result.inserted; result.ids << expense.id();

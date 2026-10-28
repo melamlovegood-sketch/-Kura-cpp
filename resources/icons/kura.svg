@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <!-- Original KuraMascot paths, enlarged on the warm paper app badge. -->
+  <rect x="4" y="4" width="248" height="248" rx="56" fill="#F4E9D8"/>
+  <g transform="translate(12 0) scale(1.7)" stroke="#49372B" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round">
+    <ellipse cx="62" cy="36" rx="11" ry="13" fill="#C97B5A"/>
+    <path d="M51 37C53 30 71 30 73 37M62 23V18C62 15 65 13 67 15" fill="none"/>
+    <g transform="translate(8 4)">
+      <path d="M103 87C99 88 93 90 89 91L88 95C91 96 95 98 98 105L91 115H100C104 116 103 122 103 122H58C58 122 54 97 74 80C73 70 74 63 78 59V48L87 55C96 54 102 63 103 70L92 74L91 81L99 80L102 75C109 77 111 85 103 87ZM49 122C38 120 31 114 31 102C31 88 39 59 16 63L15 60C19 51 27 42 40 42C54 42 61 51 61 68C61 88 48 89 49 122Z" fill="#E6C3A4"/>
+      <circle cx="93" cy="64" r="2" fill="#49372B" stroke="none"/>
+      <ellipse cx="89" cy="70" rx="3" ry="2" fill="#C97B5A" stroke="none"/>
+      <path d="M78 48C73 43 66 41 64 44" fill="none" stroke-width="2.6"/>
+    </g>
+  </g>
+</svg>

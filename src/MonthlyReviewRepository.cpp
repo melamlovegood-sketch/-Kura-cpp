@@ -15,28 +15,32 @@
 namespace {
 bool add(qint64 &sum,qint64 value) { if (value<0 || sum>std::numeric_limits<qint64>::max()-value) return false; sum+=value; return true; }
 QString amount(qint64 cents) { return Transaction::formatAmount(cents); }
-QJsonObject expenseJson(const MonthlyReviewExpense &row) { return {{"id",QString::number(row.id)},{"name",row.name},{"amount",amount(row.cents)},{"category",CategoryCatalog::label(row.category)},{"date",row.date.toString(Qt::ISODate)},{"note",row.note}}; }
+QJsonObject expenseJson(const MonthlyReviewExpense &row) { return {{"id",QString::number(row.id)},{"name",row.name},{"amount",amount(row.cents)},{"category",CategoryCatalog::purposeLabel(row.purposeCategory)},{"date",row.date.toString(Qt::ISODate)},{"note",row.note}}; }
 }
 bool MonthlyReviewRepository::load(const QDate &requested,MonthlyReviewData &data)
 {
     m_error=MonthlyBudget(requested,0).validationError(); if (!m_error.isEmpty()) return false;
     WorkflowStorage::Transaction snapshot(m_database.database(),m_error); if (!snapshot.ok()) return false;
-    MonthlyReviewData loaded; loaded.month=MonthlyBudget::firstDay(requested); for (const auto &key:CategoryCatalog::keys()) loaded.categories.append({key,0,0,0});
+    MonthlyReviewData loaded; loaded.month=MonthlyBudget::firstDay(requested); for (const auto &key:CategoryCatalog::purposeKeys()) loaded.categories.append({key,0,0,0});
     QCryptographicHash hash(QCryptographicHash::Sha256);
     const auto hashFields=[&](const QStringList &fields) { for (const auto &field:fields) { const auto bytes=field.toUtf8(); hash.addData(QByteArray::number(bytes.size())+":"+bytes); } };
     const auto collect=[&](const QDate &first,bool current) {
         if (!first.isValid()) { hashFields({"no-previous-month"}); return true; }
         const QDate last(first.year(),first.month(),first.daysInMonth()); QSqlQuery query(m_database.database());
-        query.prepare("SELECT t.id,t.description,t.amount_cents,t.category,t.detail_category,t.date,t.occurred_time,COALESCE(r.tag,0),COALESCE(r.note,''),COALESCE(t.note,'') FROM transactions t LEFT JOIN transaction_reviews r ON r.transaction_id=t.id WHERE t.date BETWEEN :first AND :last ORDER BY t.amount_cents DESC,t.id"); query.bindValue(":first",first.toString(Qt::ISODate)); query.bindValue(":last",last.toString(Qt::ISODate));
+        query.prepare("SELECT t.id,t.description,t.amount_cents,t.category,t.detail_category,t.date,t.occurred_time,COALESCE(r.tag,0),COALESCE(r.note,''),COALESCE(t.note,''),t.purpose_category,t.budget_scope FROM transactions t LEFT JOIN transaction_reviews r ON r.transaction_id=t.id WHERE t.date BETWEEN :first AND :last ORDER BY t.amount_cents DESC,t.id"); query.bindValue(":first",first.toString(Qt::ISODate)); query.bindValue(":last",last.toString(Qt::ISODate));
         if (!query.exec()) { m_error=WorkflowStorage::error(query.lastError()); return false; }
         while (query.next()) {
             MonthlyReviewExpense expense; expense.id=query.value(0).toLongLong(); expense.name=query.value(1).toString(); expense.cents=query.value(2).toLongLong(); expense.category=query.value(4).toString().isEmpty()?CategoryCatalog::fromLegacy(query.value(3).toString()):query.value(4).toString(); expense.date=QDate::fromString(query.value(5).toString(),Qt::ISODate); const auto time=query.value(6).toString(); expense.time=QTime::fromString(time,"HH:mm:ss"); expense.tag=query.value(7).toInt(); expense.note=query.value(8).toString();
             if (expense.id<=0 || expense.name.trimmed().isEmpty() || expense.name.size()>100 || expense.cents<1 || expense.cents>Transaction::MaximumAmountCents || !CategoryCatalog::isValid(expense.category) || !expense.date.isValid() || (!time.isEmpty() && !expense.time.isValid()) || (expense.tag!=-1 && expense.tag!=0 && expense.tag!=1)) { m_error=QStringLiteral("月度消费数据无效。"); return false; }
             expense.purchaseNote=query.value(9).toString();
+            Transaction record(expense.id,expense.name,expense.cents,query.value(3).toString(),expense.date,expense.time,expense.purchaseNote,query.value(4).toString(),{},query.value(10).toString(),query.value(11).toString());
+            if (!record.validationError().isEmpty()) { m_error=record.validationError(); return false; }
+            expense.purposeCategory=record.purposeCategory(); expense.budgetScope=record.budgetScope();
+            hashFields({record.purposeCategory(),record.budgetScope()});
             hashFields({current?"current":"previous",QString::number(expense.id),expense.name,QString::number(expense.cents),expense.category,expense.date.toString(Qt::ISODate),time,QString::number(expense.tag),expense.note,expense.purchaseNote});
-            if (current) { if (!add(loaded.totalCents,expense.cents) || !add(CategoryCatalog::isBasic(expense.category)?loaded.basicCents:loaded.discretionaryCents,expense.cents)) { m_error=QStringLiteral("月度金额超过支持范围。"); return false; } ++loaded.count; if (expense.tag==1) ++loaded.worthCount; if (expense.tag==-1) ++loaded.regretCount; loaded.expenses << expense; }
+            if (current) { if (!add(loaded.totalCents,expense.cents) || !add(record.isBasic()?loaded.basicCents:loaded.discretionaryCents,expense.cents)) { m_error=QStringLiteral("月度金额超过支持范围。"); return false; } ++loaded.count; if (expense.tag==1) ++loaded.worthCount; if (expense.tag==-1) ++loaded.regretCount; loaded.expenses << expense; }
             else if (!add(loaded.previousCents,expense.cents)) { m_error=QStringLiteral("上月金额超过支持范围。"); return false; }
-            for (auto &category:loaded.categories) if (category.key==expense.category) { if (!add(current?category.cents:category.previousCents,expense.cents)) { m_error=QStringLiteral("分类金额超过支持范围。"); return false; } if (current) ++category.count; break; }
+            for (auto &category:loaded.categories) if (category.key==record.purposeCategory()) { if (!add(current?category.cents:category.previousCents,expense.cents)) { m_error=QStringLiteral("分类金额超过支持范围。"); return false; } if (current) ++category.count; break; }
         }
         if (query.lastError().isValid()) { m_error=WorkflowStorage::error(query.lastError()); return false; } return true;
     };
@@ -60,7 +64,7 @@ bool MonthlyReviewRepository::load(const QDate &requested,MonthlyReviewData &dat
     loaded.factsJson=QString::fromUtf8(QJsonDocument(facts).toJson(QJsonDocument::Compact)); hashFields({loaded.factsJson}); loaded.factsHash=QString::fromLatin1(hash.result().toHex());
     loaded.localPersona=top?QStringLiteral("本月记录中，%1支出最多，占 %2%。这是当月分布，不是固定人格标签。").arg(CategoryCatalog::label(top->key),QString::number(double(top->cents)/loaded.totalCents*100,'f',1)):QStringLiteral("本月暂无支出记录，不据此判断消费偏好。");
     if (!loaded.hasData()) loaded.localStory=QStringLiteral("这个月还没有保存消费、忍住或放弃购买记录。添加数据后，可以再回来回顾。");
-    else { loaded.localStory=QStringLiteral("%1，已保存 %2 笔支出，共 %3。基础生活 %4，可支配 %5。").arg(loaded.month.toString(QStringLiteral("yyyy 年 M 月"))).arg(loaded.count).arg(amount(loaded.totalCents),amount(loaded.basicCents),amount(loaded.discretionaryCents));
+    else { loaded.localStory=QStringLiteral("%1，已保存 %2 笔支出，共 %3。必要生活 %4，自由消费 %5。").arg(loaded.month.toString(QStringLiteral("yyyy 年 M 月"))).arg(loaded.count).arg(amount(loaded.totalCents),amount(loaded.basicCents),amount(loaded.discretionaryCents));
         loaded.localStory+=loaded.previousCents>0?QStringLiteral("与上月相比%1 %2。").arg(loaded.totalCents>=loaded.previousCents?QStringLiteral("增加"):QStringLiteral("减少"),amount(qAbs(loaded.totalCents-loaded.previousCents))):QStringLiteral("上月没有支出记录，不计算变化比率。");
         loaded.localStory+=QStringLiteral("本月记录忍住 %1 次、%2，另有 %3 次放弃购买；忍住金额不代表实际收入。").arg(loaded.savingsCount).arg(amount(loaded.savingsCents)).arg(loaded.abandonedCount);
         loaded.localStory+=QStringLiteral("你标记了 %1 笔值得、%2 笔后悔。").arg(loaded.worthCount).arg(loaded.regretCount);

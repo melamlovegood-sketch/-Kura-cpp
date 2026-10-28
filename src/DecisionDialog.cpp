@@ -1,17 +1,19 @@
+#include "EmptyAmountSpinBox.h"
 #include "ModernSelectors.h"
 #include "DecisionDialog.h"
+#include "WishPrioritySelector.h"
+#include "PricePerspective.h"
+#include "PricePerspectiveHint.h"
+#include "ScreenshotDropTarget.h"
 #include "CategoryCatalog.h"
 #include "ShellWidgets.h"
 #include "TransactionRepository.h"
 #include "WishlistRepository.h"
 #include "WishPoolRepository.h"
-#include "ShoppingProfileRepository.h"
-#include "PurchaseRepository.h"
 #include "PriceRepository.h"
 #include "ProductDetailsDialog.h"
 #include <QBuffer>
 #include <QComboBox>
-#include <QDateEdit>
 #include <QDoubleSpinBox>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -36,6 +38,8 @@ DecisionDialog::DecisionDialog(DatabaseManager &database, const AISettings &sett
 {
     setObjectName(QStringLiteral("decisionDialog")); setWindowTitle(QStringLiteral("我现在想买……"));
     setProperty("dialogFixedViewport",true); setAcceptDrops(true); resize(600,610); setMinimumSize(380,400);
+    new ScreenshotDropTarget(this,[this] { return m_stage==0 && !m_service.busy() && !m_saved; },
+        [this](const QString &path) { return setScreenshot(path); },[this](const QImage &image) { return useImage(image); });
     auto *layout=new QVBoxLayout(this); layout->setContentsMargins(22,20,22,20); layout->setSpacing(14);
     m_stepLabel=ShellWidgets::label(QString(),this,"muted"); m_stepLabel->setObjectName("decisionStepLabel"); layout->addWidget(m_stepLabel);
     auto *content=new QWidget; content->setProperty("page",true);
@@ -60,19 +64,20 @@ DecisionDialog::DecisionDialog(DatabaseManager &database, const AISettings &sett
     draftLayout->addWidget(ShellWidgets::label(QStringLiteral("核对商品信息"),draft,"heading"));
     auto *form=new QFormLayout; form->setSpacing(12);
     m_name=new QLineEdit(draft); m_name->setObjectName("decisionNameEdit"); m_name->setMaxLength(100);
-    m_amount=new QDoubleSpinBox(draft); m_amount->setObjectName("decisionAmountSpinBox"); m_amount->setDecimals(2); m_amount->setRange(0,99999999.99); m_amount->setSuffix(QStringLiteral(" 元")); m_amount->setSpecialValueText(QStringLiteral("待确认"));
+    m_amount=new EmptyAmountSpinBox(draft,QStringLiteral("待确认（元）")); m_amount->setObjectName("decisionAmountSpinBox"); m_amount->setDecimals(2); m_amount->setRange(0,99999999.99);
     m_category=new ModernComboBox(draft); m_category->setObjectName("decisionCategoryComboBox");
     for (const auto &key:CategoryCatalog::keys()) m_category->addItem(CategoryCatalog::label(key),key);
-    form->addRow(QStringLiteral("商品名称"),m_name); form->addRow(QStringLiteral("金额"),m_amount); form->addRow(QStringLiteral("分类"),m_category); draftLayout->addLayout(form);
-    auto *extrasToggle=new QPushButton(QStringLiteral("补充品牌、备注与详情"),draft); extrasToggle->setObjectName("decisionExtrasButton"); extrasToggle->setCheckable(true); draftLayout->addWidget(extrasToggle,0,Qt::AlignLeft);
+    form->addRow(QStringLiteral("商品名称"),m_name); form->addRow(QStringLiteral("金额（元）"),m_amount); form->addRow(QStringLiteral("分类"),m_category); draftLayout->addLayout(form);
+    auto *costHint=new PricePerspectiveHint(PricePerspectiveStore::settingsPath(database.databasePath()),draft); costHint->setObjectName("decisionCostHintLabel"); draftLayout->addWidget(costHint);
+    connect(m_amount,&QDoubleSpinBox::valueChanged,costHint,[costHint](double amount) { costHint->setAmount(qRound64(amount*100)); });
+    auto *extrasToggle=new QPushButton(QStringLiteral("补充备注与详情"),draft); extrasToggle->setObjectName("decisionExtrasButton"); extrasToggle->setCheckable(true); draftLayout->addWidget(extrasToggle,0,Qt::AlignLeft);
     m_extras=new QWidget(draft); auto *extrasLayout=new QVBoxLayout(m_extras); extrasLayout->setContentsMargins(0,0,0,0);
     auto *extraForm=new QFormLayout;
-    m_brand=new ModernComboBox(m_extras); m_brand->setObjectName("decisionBrandComboBox");
     m_note=new QPlainTextEdit(m_extras); m_note->setObjectName("decisionNoteEdit"); m_note->setMaximumHeight(70);
-    extraForm->addRow(QStringLiteral("品牌（可选）"),m_brand); extraForm->addRow(QStringLiteral("备注（可选）"),m_note); extrasLayout->addLayout(extraForm);
+    extraForm->addRow(QStringLiteral("备注（可选）"),m_note); extrasLayout->addLayout(extraForm);
     auto *details=new QPushButton(QStringLiteral("商品详情 →"),m_extras); details->setObjectName("decisionProductDetailsButton"); extrasLayout->addWidget(details,0,Qt::AlignLeft);
     draftLayout->addWidget(m_extras); m_extras->hide(); connect(extrasToggle,&QPushButton::toggled,m_extras,&QWidget::setVisible);
-    connect(extrasToggle,&QPushButton::toggled,this,[extrasToggle](bool open) { extrasToggle->setText(open?QStringLiteral("收起补充信息"):QStringLiteral("补充品牌、备注与详情")); }); body->addWidget(draft);
+    connect(extrasToggle,&QPushButton::toggled,this,[extrasToggle](bool open) { extrasToggle->setText(open?QStringLiteral("收起补充信息"):QStringLiteral("补充备注与详情")); }); body->addWidget(draft);
     connect(details,&QPushButton::clicked,this,[this] {
         if (!validateDraft()) return;
         ProductContext context{QString(),m_name->text().trimmed(),m_category->currentData().toString(),0,qRound64(m_amount->value()*100),m_image};
@@ -84,15 +89,17 @@ DecisionDialog::DecisionDialog(DatabaseManager &database, const AISettings &sett
     auto *choiceLayout=new QVBoxLayout(m_choicePage); choiceLayout->setContentsMargins(0,0,0,0); choiceLayout->setSpacing(12);
     choiceLayout->addWidget(ShellWidgets::label(QStringLiteral("接下来，怎么做？"),m_choicePage,"heading"));
     m_summary=ShellWidgets::label(QString(),m_choicePage); m_summary->setObjectName("decisionSummaryLabel"); choiceLayout->addWidget(m_summary);
+    auto *choiceCostHint=new PricePerspectiveHint(PricePerspectiveStore::settingsPath(database.databasePath()),m_choicePage); choiceCostHint->setObjectName("decisionChoiceCostHintLabel"); choiceLayout->addWidget(choiceCostHint);
+    connect(m_amount,&QDoubleSpinBox::valueChanged,choiceCostHint,[choiceCostHint](double amount) { choiceCostHint->setAmount(qRound64(amount*100)); });
     m_wish=new QPushButton(QStringLiteral("加入清单"),m_choicePage); m_wish->setObjectName("decisionWishButton");
-    m_buy=new QPushButton(QStringLiteral("购买并记账"),m_choicePage); m_buy->setObjectName("decisionBuyButton");
+    m_buy=new QPushButton(QStringLiteral("现在就买"),m_choicePage); m_buy->setObjectName("decisionBuyButton");
+    m_buy->setToolTip(QStringLiteral("带着商品信息前往执行层，不会自动记账。"));
     m_hold=new QPushButton(QStringLiteral("这次不买"),m_choicePage); m_hold->setObjectName("decisionHoldButton");
     auto *choices=new QHBoxLayout;
     for (auto *button:{m_wish,m_buy,m_hold}) { button->setCheckable(true); button->setProperty("decisionChoice",true); choices->addWidget(button,1); } choiceLayout->addLayout(choices);
-    m_purchaseOptions=new QWidget(m_choicePage); auto *purchaseForm=new QFormLayout(m_purchaseOptions); purchaseForm->setContentsMargins(0,0,0,0);
-    m_date=new DatePicker(QDate::currentDate(),m_purchaseOptions); m_date->setObjectName("decisionDateEdit"); m_date->setDateRange(QDate(1,1,1),QDate(9999,12,31)); m_date->setDisplayFormat("yyyy-MM-dd"); m_date->setCalendarPopup(true);
-    purchaseForm->addRow(QStringLiteral("购买日期"),m_date); choiceLayout->addWidget(m_purchaseOptions);
-    m_wishlistOptions=new QWidget(m_choicePage); auto *wishForm=new QFormLayout(m_wishlistOptions); wishForm->setContentsMargins(0,0,0,0);
+    m_wishlistOptions=new QWidget(m_choicePage); auto *wishOptions=new QVBoxLayout(m_wishlistOptions); wishOptions->setContentsMargins(0,0,0,0);
+    wishOptions->addWidget(makeWishPrioritySelector(m_wishlistOptions,QStringLiteral("decisionWish"),m_priority));
+    auto *wishForm=new QFormLayout; wishOptions->addLayout(wishForm);
     m_days=new QSpinBox(m_wishlistOptions); m_days->setObjectName("decisionCoolingDaysSpinBox"); m_days->setRange(1,30); m_days->setValue(3); m_days->setSuffix(QStringLiteral(" 天"));
     wishForm->addRow(QStringLiteral("冷静期"),m_days); choiceLayout->addWidget(m_wishlistOptions);
     m_choiceHint=ShellWidgets::label(QString(),m_choicePage,"muted"); m_choiceHint->setObjectName("decisionChoiceHint"); choiceLayout->addWidget(m_choiceHint);
@@ -111,6 +118,7 @@ DecisionDialog::DecisionDialog(DatabaseManager &database, const AISettings &sett
     connect(m_back,&QPushButton::clicked,this,[this] { showStage(qMax(0,m_stage-1)); });
     connect(m_continue,&QPushButton::clicked,this,[this] { if (validateDraft()) showStage(2); });
     connect(m_commit,&QPushButton::clicked,this,[this] { saveChoice(m_choice); });
+    connect(m_priority,&QButtonGroup::idClicked,this,[this] { m_error->hide(); });
     connect(m_parse,&QPushButton::clicked,this,&DecisionDialog::analyze);
     connect(m_manual,&QPushButton::clicked,this,[this] { if (m_hasDraft) { showStage(1); return; } ParsedProduct p; p.name=m_text->toPlainText().trimmed().left(100); showDraft(p); });
     connect(m_text,&QPlainTextEdit::textChanged,this,&DecisionDialog::invalidateDraft);
@@ -119,17 +127,13 @@ DecisionDialog::DecisionDialog(DatabaseManager &database, const AISettings &sett
     connect(m_settingsButton,&QPushButton::clicked,this,[this] { reject(); emit settingsRequested(); });
     connect(m_hold,&QPushButton::clicked,this,[this] { selectChoice("hold"); });
     connect(m_wish,&QPushButton::clicked,this,[this] { selectChoice("wishlist"); });
-    connect(m_buy,&QPushButton::clicked,this,[this] { selectChoice("buy"); });
+    connect(m_buy,&QPushButton::clicked,this,&DecisionDialog::requestExecution);
     connect(m_track,&QPushButton::clicked,this,[this] { selectChoice("track"); });
-    connect(m_research,&QPushButton::clicked,this,[this] {
-        if (m_saved || !validateDraft()) return;
-        ParsedProduct product; product.name=m_name->text().trimmed(); product.amountCents=qRound64(m_amount->value()*100); product.category=m_category->currentData().toString(); product.note=m_note->toPlainText().trimmed();
-        emit researchRequested(product,m_image,m_brand->currentData().toLongLong(),m_productProfileId);
-    });
-    connect(m_category,&QComboBox::currentIndexChanged,this,&DecisionDialog::refreshBrands);
+    connect(m_research,&QPushButton::clicked,this,&DecisionDialog::requestExecution);
+    connect(m_category,&QComboBox::currentIndexChanged,this,[this] { const auto key=m_category->currentData().toString(); m_purposeCategory=CategoryCatalog::purposeFromDetail(key); m_budgetScope=CategoryCatalog::isBasic(key)?"basic":"discretionary"; });
     connect(&m_service,&AIService::parsed,this,[this](const ParsedProduct &product) { setBusy(false); showDraft(product); });
     connect(&m_service,&AIService::failed,this,[this](const QString &message) { setBusy(false); m_status->setText(QStringLiteral("输入已保留，可以重试或手动填写。")); m_error->setText(message); m_error->show(); m_settingsButton->show(); });
-    refreshBrands(); showStage(0); setBusy(false);
+    showStage(0); setBusy(false);
     for (auto *button:{m_manual,m_removeImage,m_settingsButton,m_track,m_research,extrasToggle,details}) button->setProperty("decisionQuiet",true);
     for (auto *button:findChildren<QPushButton *>()) button->setAutoDefault(false);
 }
@@ -153,13 +157,12 @@ void DecisionDialog::selectChoice(const QString &choice)
 {
     if (m_stage!=2 || m_saved) return;
     m_choice=choice;
-    m_hold->setChecked(choice=="hold"); m_wish->setChecked(choice=="wishlist"); m_buy->setChecked(choice=="buy"); m_track->setChecked(choice=="track");
-    m_purchaseOptions->setVisible(choice=="buy"); m_wishlistOptions->setVisible(choice=="wishlist");
-    m_choiceHint->setText(choice=="buy"?QStringLiteral("记账后会安排 7 天和 30 天购买复盘。"):
-        choice=="wishlist"?QStringLiteral("从确认保存时开始冷静期。"):
+    m_hold->setChecked(choice=="hold"); m_wish->setChecked(choice=="wishlist"); m_buy->setChecked(false); m_track->setChecked(choice=="track");
+    m_wishlistOptions->setVisible(choice=="wishlist");
+    m_choiceHint->setText(choice=="wishlist"?QStringLiteral("从确认保存时开始冷静期。"):
         choice=="hold"?QStringLiteral("这笔忍住金额会记入许愿池，不产生消费。"):
         QStringLiteral("只记录当前价，不产生消费。"));
-    m_commit->setText(choice=="buy"?QStringLiteral("确认购买并记账"):choice=="wishlist"?QStringLiteral("确认加入清单"):choice=="hold"?QStringLiteral("确认这次不买"):QStringLiteral("确认记录价格"));
+    m_commit->setText(choice=="wishlist"?QStringLiteral("确认加入清单"):choice=="hold"?QStringLiteral("确认这次不买"):QStringLiteral("确认记录价格"));
     m_commit->show(); m_error->hide();
 }
 
@@ -180,8 +183,22 @@ void DecisionDialog::setInitialText(const QString &text)
 
 void DecisionDialog::setResearchAvailable(bool available)
 {
+    m_researchAvailable=available;
+    m_buy->setToolTip(available?QStringLiteral("带着商品信息前往执行层，不会自动记账。"):QStringLiteral("请先处理执行层进行中的决策。"));
+    setBusy(m_service.busy());
     m_research->setEnabled(available);
     m_research->setText(available?QStringLiteral("还想比较？继续研究 →"):QStringLiteral("执行页已有进行中的决策"));
+}
+
+void DecisionDialog::requestExecution()
+{
+    m_buy->setChecked(false);
+    if (m_saved || m_service.busy() || m_stage!=2 || !m_researchAvailable || !validateDraft()) return;
+    m_choice.clear(); m_wish->setChecked(false); m_hold->setChecked(false); m_track->setChecked(false);
+    m_wishlistOptions->hide(); m_commit->hide(); m_choiceHint->clear(); m_error->hide();
+    ParsedProduct product; product.name=m_name->text().trimmed(); product.amountCents=qRound64(m_amount->value()*100); product.category=m_category->currentData().toString(); product.note=m_note->toPlainText().trimmed();
+    product.purposeCategory=m_purposeCategory; product.budgetScope=m_budgetScope;
+    emit researchRequested(product,m_image,m_productProfileId);
 }
 
 void DecisionDialog::showHandoffError(const QString &message)
@@ -193,12 +210,16 @@ void DecisionDialog::setBusy(bool busy)
 {
     m_text->setEnabled(!busy); m_parse->setEnabled(!busy && (m_hasDraft || !m_text->toPlainText().trimmed().isEmpty() || !m_image.isEmpty())); m_imageButton->setEnabled(!busy); m_removeImage->setEnabled(!busy); m_manual->setEnabled(!busy); m_settingsButton->setEnabled(!busy); m_draft->setEnabled(!busy);
     for (auto *button : {m_hold,m_wish,m_buy,m_track}) button->setEnabled(!busy && m_stage==2 && !m_saved);
+    m_buy->setEnabled(m_buy->isEnabled() && m_researchAvailable);
     m_back->setEnabled(!busy); m_continue->setEnabled(!busy); m_commit->setEnabled(!busy && !m_saved);
     m_parse->setText(busy ? QStringLiteral("识别中…") : QStringLiteral("下一步 →"));
 }
 void DecisionDialog::invalidateDraft()
 {
     if (m_service.busy()) return;
+    m_priority->setExclusive(false);
+    for (auto *button:m_priority->buttons()) button->setChecked(false);
+    m_priority->setExclusive(true);
     m_productProfileId=0; m_hasDraft=false;
     m_choice.clear(); showStage(0); setBusy(false);
 }
@@ -207,17 +228,12 @@ void DecisionDialog::showDraft(const ParsedProduct &product)
     m_hasDraft=true;
     m_name->setText(product.name); m_amount->setValue(double(product.amountCents)/100);
     m_category->setCurrentIndex(qMax(0,m_category->findData(product.category))); m_note->setPlainText(product.note);
-    m_choice.clear(); m_purchaseOptions->hide(); m_wishlistOptions->hide();
+    m_purposeCategory=product.purposeCategory.isEmpty()?CategoryCatalog::purposeFromDetail(product.category):product.purposeCategory;
+    m_budgetScope=product.budgetScope.isEmpty()?(CategoryCatalog::isBasic(product.category)?"basic":"discretionary"):product.budgetScope;
+    m_choice.clear(); m_wishlistOptions->hide();
     for (auto *button:{m_hold,m_wish,m_buy,m_track}) button->setChecked(false);
     showStage(1); setBusy(false);
     QTimer::singleShot(0,this,[this] { m_scroll->ensureWidgetVisible(m_name,0,24); });
-}
-void DecisionDialog::refreshBrands()
-{
-    ShoppingProfileRepository profile(m_database); QList<BrandEntry> brands; const auto selected=m_brand->currentData().toLongLong(); m_brand->clear(); m_brand->addItem(QStringLiteral("未选择品牌"),qint64(0));
-    if (!profile.loadBrands(brands,m_category->currentData().toString())) return;
-    for (const auto &brand:brands) m_brand->addItem(QStringLiteral("%1 · 权重 %2").arg(brand.name).arg(brand.weight),brand.id);
-    m_brand->setCurrentIndex(qMax(0,m_brand->findData(selected)));
 }
 void DecisionDialog::analyze()
 {
@@ -237,6 +253,15 @@ bool DecisionDialog::setScreenshot(const QString &path)
         error=QStringLiteral("请选择不超过 20 MB、2500 万像素的有效图片。");
     QImage image;
     if (error.isEmpty()) { reader.setScaledSize(size.scaled(1600,1600,Qt::KeepAspectRatio)); image=reader.read(); if (image.isNull()) error=QStringLiteral("无法读取这张图片，请换一张截图。"); }
+    if (!error.isEmpty()) { m_error->setText(error); m_error->show(); return false; }
+    return useImage(image);
+}
+bool DecisionDialog::useImage(const QImage &source)
+{
+    if (m_service.busy() || m_stage!=0 || m_saved) return false;
+    QString error;
+    if (source.isNull() || qint64(source.width())*source.height()>25000000) { m_error->setText(QStringLiteral("请选择不超过 2500 万像素的有效图片。")); m_error->show(); return false; }
+    QImage image=source.scaled(1600,1600,Qt::KeepAspectRatio,Qt::SmoothTransformation);
     QByteArray bytes;
     if (error.isEmpty()) {
         QImage canvas(image.size(),QImage::Format_RGB32); canvas.fill(Qt::white); { QPainter p(&canvas); p.drawImage(0,0,image); }
@@ -249,27 +274,24 @@ bool DecisionDialog::setScreenshot(const QString &path)
     m_imagePreview->show(); m_removeImage->show(); invalidateDraft();
     m_status->setText(QStringLiteral("解析时会将这张截图发送到设置中的 AI 服务。")); return true;
 }
-void DecisionDialog::dragEnterEvent(QDragEnterEvent *event)
-{
-    if (m_stage==0 && !m_service.busy() && event->mimeData()->hasUrls() && event->mimeData()->urls().size()==1 && event->mimeData()->urls()[0].isLocalFile()) event->acceptProposedAction();
-}
-void DecisionDialog::dropEvent(QDropEvent *event)
-{
-    if (event->mimeData()->hasUrls() && event->mimeData()->urls().size()==1 && setScreenshot(event->mimeData()->urls()[0].toLocalFile())) event->acceptProposedAction();
-}
 void DecisionDialog::saveChoice(const QString &choice)
 {
     if (m_saved || m_service.busy() || m_stage!=2 || m_choice.isEmpty()) return;
     QString inputError;
     if (!m_amount->hasAcceptableInput()) inputError=QStringLiteral("请输入有效金额，最多两位小数。");
-    else if (choice==QStringLiteral("buy") && !m_date->hasAcceptableInput()) inputError=QStringLiteral("请选择有效的购买记账日期。");
     else if (choice==QStringLiteral("wishlist") && !m_days->hasAcceptableInput()) inputError=QStringLiteral("请填写 1 至 30 天的冷静期。");
-    if (!inputError.isEmpty()) { m_error->setText(inputError); m_error->show(); return; }
-    if (choice==QStringLiteral("buy")) m_date->interpretText();
+    else if (choice==QStringLiteral("wishlist") && m_priority->checkedId()<1) inputError=QStringLiteral("请点选现在有多需要这件商品。");
+    if (!inputError.isEmpty()) {
+        m_error->setText(inputError); m_error->show();
+        if (choice==QStringLiteral("wishlist") && m_priority->checkedId()<1) {
+            auto *first=m_priority->button(1); first->setFocus(); m_scroll->ensureWidgetVisible(first,0,8);
+        }
+        return;
+    }
     if (choice==QStringLiteral("wishlist")) m_days->interpretText();
     m_amount->interpretText(); const qint64 cents=qRound64(m_amount->value()*100);
     const QString name=m_name->text().trimmed(), detail=m_category->currentData().toString(), note=m_note->toPlainText().trimmed();
-    Transaction expense(0,name,cents,CategoryCatalog::legacyCategory(detail),choice==QStringLiteral("buy")?m_date->date():QDate::currentDate(),QTime::currentTime(),note,detail,m_image);
+    Transaction expense(0,name,cents,CategoryCatalog::legacyCategory(detail),QDate::currentDate(),QTime::currentTime(),note,detail,m_image,m_purposeCategory,m_budgetScope);
     QString error=expense.validationError();
     if (note.size()>500) error=QStringLiteral("理由／备注最多 500 个字符。");
     if (!m_amount->hasAcceptableInput()) error=QStringLiteral("请输入有效金额，最多两位小数。");
@@ -280,9 +302,8 @@ void DecisionDialog::saveChoice(const QString &choice)
         WishPoolRepository repository(m_database); ok=repository.addSaving(cents,name+(note.isEmpty()?QString():QStringLiteral(" · ")+note),m_token); error=repository.lastError();
     } else if (choice==QStringLiteral("wishlist")) {
         WishItem item; item.name=name; item.estimatedCents=cents; item.category=expense.category(); item.detailCategory=detail; item.sourceImage=m_image; item.reason=note; item.coolingDays=m_days->value();
+        item.priority=m_priority->checkedId();
         WishlistRepository repository(m_database); ok=repository.add(item,QDateTime::currentDateTimeUtc(),m_productProfileId); id=item.id; error=repository.lastError();
-    } else if (choice==QStringLiteral("buy")) {
-        PurchaseRepository repository(m_database); ok=repository.record(expense,m_brand->currentData().toLongLong(),0,m_productProfileId); id=expense.id(); error=repository.lastError();
     } else if (choice==QStringLiteral("track")) {
         PriceRepository repository(m_database); ok=repository.intake(name,detail,cents,m_image.isEmpty()?QStringLiteral("文字输入确认"):QStringLiteral("截图输入确认"),m_token,id,QDateTime::currentDateTimeUtc(),m_productProfileId); error=repository.lastError();
     }

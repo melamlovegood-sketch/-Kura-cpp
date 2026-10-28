@@ -8,6 +8,7 @@ struct ProductContext {
     QString kind,name,category;
     qint64 entityId=0,amountCents=0;
     QByteArray image;
+    QString purchaseReason;
 };
 struct ProductProfile {
     qint64 id=0,revision=0;
@@ -24,6 +25,7 @@ class ProductRepository {
 public:
     explicit ProductRepository(DatabaseManager &database):m_database(database) {}
     static QList<QPair<QString,QString>> fieldLabels();
+    static QString purchaseReason(const ProductProfile &profile,const ProductContext &context);
     static bool validFields(const QJsonObject &fields);
     static bool validConversation(const QString &conversation);
     bool context(const QString &kind,qint64 entityId,ProductContext &context);

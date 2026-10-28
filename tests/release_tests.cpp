@@ -13,6 +13,8 @@
 #include <QDir>
 #include <QFile>
 #include <QLabel>
+#include <QIcon>
+#include "AppTypography.h"
 #include <QPushButton>
 #include <QScrollArea>
 #include <QScrollBar>
@@ -32,10 +34,23 @@ class ReleaseTests : public QObject
 {
     Q_OBJECT
 private slots:
+    void appIconSupportsWindowsSizes();
     void demoFixtureAndNoOverwrite();
     void wishPriorityAndBackupMigration();
     void responsivePagesAndPreviews();
 };
+void ReleaseTests::appIconSupportsWindowsSizes()
+{
+    AppTypography::initialize();
+    const QIcon icon(QStringLiteral(":/icons/kura.ico"));
+    QVERIFY(!icon.isNull());
+    for (const int size:{16,20,24,32,48,64,128,256}) {
+        QVERIFY(icon.availableSizes().contains(QSize(size,size)));
+        const auto pixmap=icon.pixmap(size,size);
+        QVERIFY(!pixmap.isNull()); QCOMPARE(pixmap.size(),QSize(size,size));
+        QVERIFY(pixmap.toImage().pixelColor(size/2,size/2).alpha()>0);
+    }
+}
 void ReleaseTests::demoFixtureAndNoOverwrite()
 {
     QTemporaryDir directory;
@@ -73,8 +88,8 @@ void ReleaseTests::wishPriorityAndBackupMigration()
     WishItem item; item.name=QStringLiteral("教材"); item.estimatedCents=5000; item.priority=1;
     QVERIFY(repository.add(item));
     WishDialog dialog(item);
-    QCOMPARE(dialog.findChild<QComboBox *>(QStringLiteral("wishPriorityComboBox"))->currentIndex(),0);
-    dialog.findChild<QComboBox *>(QStringLiteral("wishPriorityComboBox"))->setCurrentIndex(2);
+    QVERIFY(dialog.findChild<QPushButton *>("wishPriority1Button")->isChecked());
+    dialog.findChild<QPushButton *>("wishPriority3Button")->click();
     QVERIFY(repository.update(dialog.item()));
     QList<WishItem> items; QVERIFY(repository.findAll(items)); QCOMPARE(items[0].priority,3);
     item.priority=0; QVERIFY(!repository.update(item));
@@ -100,7 +115,7 @@ void ReleaseTests::responsivePagesAndPreviews()
     QTemporaryDir directory;
     const QString path=directory.filePath(QStringLiteral("preview.sqlite"));
     { DatabaseManager database(path); QVERIFY(database.initialize()); QString error; QVERIFY(DemoData::populate(database,error)); }
-    MainWindow window(path); window.findChild<QTabWidget *>("reviewSectionsTabs")->setCurrentIndex(2); window.showPage(MainWindow::Page::Billing); window.resize(1180,860); window.show(); settle();
+    MainWindow window(path); window.showPage(MainWindow::Page::Billing); window.resize(1180,860); window.show(); settle();
     auto *pages=window.findChild<QStackedWidget *>(QStringLiteral("mainPages"));
     QCOMPARE(pages->count(),7);
     auto *categories=window.findChild<QTableWidget *>(QStringLiteral("categorySummaryTable"));
@@ -114,19 +129,6 @@ void ReleaseTests::responsivePagesAndPreviews()
         pages->setCurrentIndex(page); settle();
         if (!preview.isEmpty()) QVERIFY(window.grab().save(preview+QStringLiteral("/")+names[page]+QStringLiteral(".png")));
     }
-    pages->setCurrentIndex(1);
-    auto *details=window.findChild<QTabWidget *>(QStringLiteral("statisticsDetailsTabs")); details->setCurrentIndex(1); settle();
-    auto *review=window.findChild<QTableWidget *>(QStringLiteral("categoryReviewTable"));
-    QCOMPARE(review->rowCount(),6);
-    QCOMPARE(review->item(4,1)->text(),QStringLiteral("¥127.00"));
-    QCOMPARE(review->item(4,2)->text(),QStringLiteral("2"));
-    QCOMPARE(review->item(4,3)->text(),QStringLiteral("53.6%"));
-    QCOMPARE(review->item(4,5)->text(),QStringLiteral("+¥127.00"));
-    if (!preview.isEmpty()) QVERIFY(window.grab().save(preview+QStringLiteral("/release-category-review.png")));
-    auto *reviewMonth=window.findChild<QComboBox *>(QStringLiteral("categoryReviewMonthComboBox"));
-    reviewMonth->setCurrentIndex(0); // Selected month can differ from the current month.
-    if (QDate::currentDate().month()>1) QCOMPARE(review->item(2,1)->text(),QStringLiteral("¥92.00"));
-    reviewMonth->setCurrentIndex(QDate::currentDate().month()-1);
     pages->setCurrentIndex(0); window.resize(800,600); settle();
     QCOMPARE(window.size(),QSize(800,600));
     auto *scroll=window.findChild<QScrollArea *>(QStringLiteral("recordsScrollArea"));
@@ -135,12 +137,11 @@ void ReleaseTests::responsivePagesAndPreviews()
     if (!preview.isEmpty()) QVERIFY(window.grab().save(preview+QStringLiteral("/release-compact-top.png")));
     scroll->verticalScrollBar()->setValue(scroll->verticalScrollBar()->maximum()); settle();
     if (!preview.isEmpty()) QVERIFY(window.grab().save(preview+QStringLiteral("/release-compact-bottom.png")));
-    window.findChild<QComboBox *>(QStringLiteral("categoryFilter"))->setCurrentText(QStringLiteral("餐饮"));
+    window.findChild<QComboBox *>(QStringLiteral("categoryFilter"))->setCurrentText(QStringLiteral("吃喝"));
     window.findChild<QPushButton *>(QStringLiteral("applyFilterButton"))->click();
     QCOMPARE(window.findChild<QTableWidget *>(QStringLiteral("transactionTable"))->rowCount(),2);
     total=0; for(int row=0;row<6;++row) total+=categories->item(row,1)->data(Qt::UserRole).toLongLong();
     QCOMPARE(total,23700);
-    QCOMPARE(review->item(4,1)->text(),QStringLiteral("¥127.00"));
 }
 QTEST_MAIN(ReleaseTests)
 #include "release_tests.moc"

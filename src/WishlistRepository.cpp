@@ -62,6 +62,11 @@ bool WishlistRepository::add(WishItem &item, const QDateTime &now,qint64 product
     if (!connectionReady()) return false;
     WorkflowStorage::Transaction productWrite(m_database.database(),m_lastError); if (!productWrite.ok()) return false;
     WishItem saved = item;
+    ProductRepository products(m_database);
+    if (productId) {
+        ProductProfile profile; if (!products.load(productId,profile)) { m_lastError=products.lastError(); return false; }
+        if (profile.fields.contains("purchase_reason")) saved.reason=profile.fields.value("purchase_reason").toString();
+    }
     saved.name = saved.name.trimmed();
     saved.reason = saved.reason.trimmed();
     saved.createdAt = now.toUTC();
@@ -80,7 +85,6 @@ bool WishlistRepository::add(WishItem &item, const QDateTime &now,qint64 product
         return false;
     }
     saved.id = query.lastInsertId().toLongLong(); query.finish();
-    ProductRepository products(m_database);
     if (productId && !products.attach("wish",saved.id,productId)) { m_lastError=products.lastError(); return false; }
     if (!productWrite.commit()) return false;
     item = saved;
@@ -118,6 +122,17 @@ bool WishlistRepository::update(const WishItem &item, const QDateTime &now)
     query.prepare("UPDATE price_tracks SET name=:name,name_key=:key,detail_category=:category WHERE id IN (SELECT id FROM wishlist_price_links WHERE wish_id=:wish)");
     query.bindValue(":name",item.name.trimmed()); query.bindValue(":key",WorkflowStorage::nameKey(item.name)); query.bindValue(":category",item.detailCategory.isEmpty()?CategoryCatalog::fromLegacy(item.category):item.detailCategory); query.bindValue(":wish",item.id);
     if (!query.exec()) { m_lastError=queryError(query.lastError()); return false; } query.finish();
+    query.prepare("SELECT product_id FROM product_links WHERE kind='wish' AND entity_id=:id"); query.bindValue(":id",item.id);
+    if (!query.exec()) { m_lastError=queryError(query.lastError()); return false; }
+    const auto productId=query.next()?query.value(0).toLongLong():0; query.finish();
+    if (productId) {
+        ProductRepository products(m_database); ProductProfile profile;
+        if (!products.load(productId,profile)) { m_lastError=products.lastError(); return false; }
+        if (!profile.fields.contains("purchase_reason") || profile.fields.value("purchase_reason").toString()!=item.reason.trimmed()) {
+            profile.fields.insert("purchase_reason",item.reason.trimmed());
+            if (!products.save(profile)) { m_lastError=products.lastError(); return false; }
+        }
+    }
     return write.commit();
 }
 

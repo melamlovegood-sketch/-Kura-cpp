@@ -4,6 +4,7 @@
 class QLabel;
 class QProgressBar;
 class QPropertyAnimation;
+class QPushButton;
 class WishPoolWidget : public QFrame {
     Q_OBJECT
 public:
@@ -21,4 +22,5 @@ private:
     QLabel *m_name,*m_amount,*m_hint,*m_error;
     QProgressBar *m_progress;
     QPropertyAnimation *m_animation;
+    QPushButton *m_goal, *m_history, *m_changeGoal;
 };

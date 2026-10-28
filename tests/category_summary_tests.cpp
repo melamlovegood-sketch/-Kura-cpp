@@ -31,7 +31,7 @@ void fill(AddTransactionDialog *dialog, const QString &category, double amount, 
 {
     dialog->findChild<QLineEdit *>("descriptionEdit")->setText(QStringLiteral("测试消费"));
     dialog->findChild<QDoubleSpinBox *>("amountSpinBox")->setValue(amount);
-    dialog->findChild<QComboBox *>("categoryComboBox")->setCurrentText(CategoryCatalog::label(CategoryCatalog::fromLegacy(category)));
+    dialog->findChild<QComboBox *>("categoryComboBox")->setCurrentText(CategoryCatalog::purposeLabel(CategoryCatalog::purposeFromDetail(CategoryCatalog::fromLegacy(category))));
     dialog->findChild<QDateEdit *>("dateEdit")->setDate(date);
 }
 }
@@ -218,18 +218,19 @@ void CategorySummaryTests::refreshWithCrudAndFilters()
     QVERIFY(summary && records);
     QCOMPARE(summary->rowCount(), 6);
     auto check = [&](const QList<qint64> &expected) {
+        const QList<qint64> purposes={expected[0],expected[3],0,expected[1],expected[4]+expected[5],expected[2]};
         qint64 sum = 0;
         for (int row = 0; row < 6; ++row) {
-            QCOMPARE(summary->item(row, 0)->text(), Transaction::categories()[row]);
-            QCOMPARE(summary->item(row, 1)->text(), Transaction::formatAmount(expected[row]));
-            sum += expected[row];
+            QCOMPARE(summary->item(row, 0)->text(), CategoryCatalog::purposeLabel(CategoryCatalog::purposeKeys()[row]));
+            QCOMPARE(summary->item(row, 1)->text(), Transaction::formatAmount(purposes[row]));
+            sum += purposes[row];
         }
         QCOMPARE(window.findChild<QLabel *>("monthExpenseLabel")->text(),
                  QStringLiteral("本月支出：%1").arg(Transaction::formatAmount(sum)));
     };
     check({0, 0, 0, 0, 0, 0});
     auto *category = window.findChild<QComboBox *>("categoryFilter");
-    category->setCurrentText(QStringLiteral("交通"));
+    category->setCurrentText(QStringLiteral("出行"));
     window.findChild<QCheckBox *>("useDateRangeCheckBox")->setChecked(true);
     window.findChild<QDateEdit *>("startDateFilter")->setDate(QDate::currentDate().addMonths(-1));
     window.findChild<QDateEdit *>("endDateFilter")->setDate(QDate::currentDate().addMonths(-1));
@@ -322,7 +323,7 @@ void CategorySummaryTests::preview()
         QVERIFY(QDir().mkpath(previewDir));
         QVERIFY(window.grab().save(previewDir + "/category-summary.png"));
     }
-    window.findChild<QComboBox *>("categoryFilter")->setCurrentText(QStringLiteral("餐饮"));
+    window.findChild<QComboBox *>("categoryFilter")->setCurrentText(QStringLiteral("吃喝"));
     window.findChild<QPushButton *>("applyFilterButton")->click();
     settle();
     QCOMPARE(window.findChild<QTableWidget *>("transactionTable")->rowCount(), 1);

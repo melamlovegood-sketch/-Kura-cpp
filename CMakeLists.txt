@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
-project(KuraCpp VERSION 0.12.8 LANGUAGES CXX)
+project(KuraCpp VERSION 0.16.6 LANGUAGES CXX)
+string(TIMESTAMP KURA_BUILD_DATE "%Y-%m-%d")
+configure_file(src/BuildInfo.h.in generated/BuildInfo.h @ONLY)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -14,6 +16,7 @@ find_package(Qt6 6.7 REQUIRED COMPONENTS Widgets Sql Network)
 find_package(ZLIB REQUIRED)
 
 add_library(kura_core STATIC
+    src/AchievementRepository.cpp src/AchievementRepository.h
     src/Transaction.cpp src/Transaction.h
     src/DatabaseManager.cpp src/DatabaseManager.h
     src/TransactionRepository.cpp src/TransactionRepository.h
@@ -28,8 +31,11 @@ add_library(kura_core STATIC
     src/UnifiedWishlistRepository.cpp src/UnifiedWishlistRepository.h
     src/CsvExporter.cpp src/CsvExporter.h
     src/DatabaseBackupService.cpp src/DatabaseBackupService.h
+    src/AutoBackupService.cpp src/AutoBackupService.h
     src/DemoData.cpp src/DemoData.h
+    src/DemoPersonas.cpp src/DemoPersonas.h
     src/CategoryCatalog.cpp src/CategoryCatalog.h
+    src/PricePerspective.cpp src/PricePerspective.h
     src/DecisionSchema.cpp src/DecisionSchema.h
     src/WishPoolRepository.cpp src/WishPoolRepository.h
     src/AISettings.cpp src/AISettings.h
@@ -49,13 +55,17 @@ add_library(kura_core STATIC
     src/MonthlyStoryTemplate.cpp src/MonthlyStoryTemplate.h
     src/BillingAggregation.cpp src/BillingAggregation.h
 )
-target_include_directories(kura_core PUBLIC src)
+target_include_directories(kura_core PUBLIC src "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_link_libraries(kura_core PUBLIC Qt6::Sql Qt6::Gui ZLIB::ZLIB)
 if(WIN32)
     target_link_libraries(kura_core PUBLIC crypt32)
 endif()
 
 add_library(kura_widgets STATIC
+    src/AchievementCelebration.cpp src/AchievementCelebration.h src/AchievementArt.h
+    src/EmptyAmountSpinBox.h
+    src/DemoMode.cpp src/DemoMode.h
+    src/AchievementWall.cpp src/AchievementWall.h
     resources/kura.qrc
     src/mainwindow.cpp src/mainwindow.h
     src/AddTransactionDialog.cpp src/AddTransactionDialog.h
@@ -69,35 +79,83 @@ add_library(kura_widgets STATIC
     src/AppTheme.cpp src/AppTheme.h
     src/DialogUi.cpp src/DialogUi.h
     src/AppTypography.cpp src/AppTypography.h
+    src/SplashScreen.cpp src/SplashScreen.h
+    src/OnboardingDialog.cpp src/OnboardingDialog.h
+    src/OnboardingTour.cpp src/OnboardingTour.h src/KuraMascot.h
     src/HomeWidget.cpp src/HomeWidget.h
     src/AppearanceWidget.cpp src/AppearanceWidget.h
+    src/PricePerspectiveWidget.cpp src/PricePerspectiveWidget.h
+    src/PricePerspectiveHint.cpp src/PricePerspectiveHint.h
     src/ShellWidgets.h
+    src/ScreenshotDropTarget.h
     src/ProductList.h
     src/AIService.cpp src/AIService.h
     src/DecisionDialog.cpp src/DecisionDialog.h
     src/WishPoolWidget.cpp src/WishPoolWidget.h
     src/ImagePreview.h
-    src/ShoppingProfileDialog.cpp src/ShoppingProfileDialog.h
     src/ExecutionWidget.cpp src/ExecutionWidget.h
     src/DecisionChatWidget.cpp src/DecisionChatWidget.h
     src/ReviewWidget.cpp src/ReviewWidget.h
     src/PriceWidget.cpp src/PriceWidget.h
     src/PriceRecordDialog.cpp src/PriceRecordDialog.h
     src/ProductDetailsDialog.cpp src/ProductDetailsDialog.h
+    src/ProductShareDialog.cpp src/ProductShareDialog.h
     src/WorkflowOverview.cpp src/WorkflowOverview.h
     src/BillImportDialog.cpp src/BillImportDialog.h
     src/MonthlyReviewWidget.cpp src/MonthlyReviewWidget.h
     src/BillingWorkspace.cpp src/BillingWorkspace.h
     src/BillingCharts.cpp src/BillingCharts.h
     src/ExpenseComposer.cpp src/ExpenseComposer.h
+    src/ExpenseClassification.cpp src/ExpenseClassification.h
     src/ModernSelectors.cpp src/ModernSelectors.h
 )
 target_link_libraries(kura_widgets PUBLIC kura_core Qt6::Widgets Qt6::Network)
 add_executable(KuraCpp WIN32 src/main.cpp)
+if(WIN32)
+    enable_language(RC)
+    target_sources(KuraCpp PRIVATE resources/kura.rc)
+    target_include_directories(KuraCpp PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/resources/icons")
+endif()
 target_link_libraries(KuraCpp PRIVATE kura_widgets)
 include(CTest)
 if(BUILD_TESTING)
     find_package(Qt6 REQUIRED COMPONENTS Test)
+    add_executable(onboarding_tests tests/onboarding_tests.cpp)
+    target_link_libraries(onboarding_tests PRIVATE kura_widgets Qt6::Test)
+    add_test(NAME onboarding_tests COMMAND onboarding_tests)
+    set_tests_properties(onboarding_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    add_executable(trial_ai_tests tests/trial_ai_tests.cpp)
+    target_link_libraries(trial_ai_tests PRIVATE kura_widgets Qt6::Test)
+    add_test(NAME trial_ai_tests COMMAND trial_ai_tests)
+    set_tests_properties(trial_ai_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    add_executable(settings_tests tests/settings_tests.cpp)
+    target_link_libraries(settings_tests PRIVATE kura_widgets Qt6::Test)
+    add_test(NAME settings_tests COMMAND settings_tests)
+    set_tests_properties(settings_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    add_executable(achievement_tests tests/achievement_tests.cpp)
+    target_link_libraries(achievement_tests PRIVATE kura_widgets Qt6::Test)
+    add_test(NAME achievement_tests COMMAND achievement_tests)
+    set_tests_properties(achievement_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    add_executable(price_perspective_tests tests/price_perspective_tests.cpp)
+    target_link_libraries(price_perspective_tests PRIVATE kura_widgets Qt6::Test)
+    add_test(NAME price_perspective_tests COMMAND price_perspective_tests)
+    set_tests_properties(price_perspective_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    add_executable(splash_tests tests/splash_tests.cpp)
+    target_link_libraries(splash_tests PRIVATE kura_widgets Qt6::Test)
+    add_test(NAME splash_tests COMMAND splash_tests)
+    set_tests_properties(splash_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    add_executable(expense_classification_tests tests/expense_classification_tests.cpp)
+    target_link_libraries(expense_classification_tests PRIVATE kura_widgets Qt6::Test)
+    add_test(NAME expense_classification_tests COMMAND expense_classification_tests)
+    set_tests_properties(expense_classification_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    add_executable(screenshot_drop_tests tests/screenshot_drop_tests.cpp)
+    target_link_libraries(screenshot_drop_tests PRIVATE kura_widgets Qt6::Test)
+    add_test(NAME screenshot_drop_tests COMMAND screenshot_drop_tests)
+    set_tests_properties(screenshot_drop_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    add_executable(product_share_tests tests/product_share_tests.cpp)
+    target_link_libraries(product_share_tests PRIVATE kura_widgets Qt6::Test)
+    add_test(NAME product_share_tests COMMAND product_share_tests)
+    set_tests_properties(product_share_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_executable(secondary_ui_tests tests/secondary_ui_tests.cpp)
     target_link_libraries(secondary_ui_tests PRIVATE kura_widgets Qt6::Test)
     add_test(NAME secondary_ui_tests COMMAND secondary_ui_tests)
@@ -197,8 +255,17 @@ if(BUILD_TESTING)
     add_test(NAME data_management_tests COMMAND data_management_tests)
     set_tests_properties(data_management_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+    add_executable(demo_personas_tests tests/demo_personas_tests.cpp)
+    target_link_libraries(demo_personas_tests PRIVATE kura_widgets Qt6::Test)
+    add_test(NAME demo_personas_tests COMMAND demo_personas_tests)
+    set_tests_properties(demo_personas_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
     add_executable(release_tests tests/release_tests.cpp)
     target_link_libraries(release_tests PRIVATE kura_widgets Qt6::Test)
     add_test(NAME release_tests COMMAND release_tests)
     set_tests_properties(release_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    add_executable(amount_input_tests tests/amount_input_tests.cpp)
+    target_link_libraries(amount_input_tests PRIVATE kura_widgets Qt6::Test)
+    add_test(NAME amount_input_tests COMMAND amount_input_tests)
+    set_tests_properties(amount_input_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()

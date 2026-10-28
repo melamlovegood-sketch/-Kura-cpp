@@ -39,6 +39,8 @@ protected:
 private:
     void showView(bool charts);
     void showChart(int view);
+    void updateContentWidth();
+    void updatePanelLayout();
     void renderChartSummary();
     void render();
     void renderRecent();
@@ -53,17 +55,17 @@ private:
     bool m_available=false,m_hasSnapshot=false;
     ExpenseComposer *m_composer;
     MonthPicker *m_monthPicker;
-    QStackedWidget *m_views,*m_chartViews;
-    QPushButton *m_recordTab,*m_chartTab,*m_calendarTab,*m_trendTab,*m_quickRecord,*m_six,*m_budgetEdit,*m_import,*m_budgetSummaryButton,*m_detailsToggle,*m_trendRecords;
+    QStackedWidget *m_views;
+    QPushButton *m_recordTab,*m_chartTab,*m_trendTab,*m_quickRecord,*m_six,*m_budgetEdit,*m_import,*m_trendRecords;
     QWidget *m_headerStats;
     QLabel *m_chartAmount;
+    QLabel *m_calendarAmount,*m_calendarRange,*m_trendTitle;
     QDate m_trendSelection;
-    QLabel *m_budgetSummary;
     QLabel *m_total,*m_today,*m_count,*m_recentCount,*m_budgetState,*m_budgetBalance,*m_budgetTotal,*m_basicRemaining,*m_discRemaining,*m_basicUsed,*m_discUsed,*m_chartTitle,*m_chartHint,*m_trendReadout,*m_trendSummary,*m_error;
     QProgressBar *m_basicBar,*m_discBar;
     BillingCalendar *m_calendar;
     BillingTrendChart *m_trend;
-    QBoxLayout *m_workspaceLayout,*m_sidebarLayout;
+    QBoxLayout *m_workspaceLayout,*m_sidebarLayout,*m_chartPanels;
     QWidget *m_sidebar;
     QVBoxLayout *m_recentRows,*m_categoryRows,*m_dayRows;
 };

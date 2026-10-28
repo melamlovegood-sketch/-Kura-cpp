@@ -1,3 +1,4 @@
+#include "EmptyAmountSpinBox.h"
 #include "WishPriceDialog.h"
 #include "UnifiedWishlistRepository.h"
 #include "WishlistRepository.h"
@@ -75,8 +76,8 @@ void WishPriceDialog::configure()
     if (!m_track.id) return;
     auto *dialog=new QDialog(this); dialog->setWindowTitle(QStringLiteral("目标价与商品链接")); dialog->setObjectName("wishPriceTargetDialog"); dialog->setAttribute(Qt::WA_DeleteOnClose); dialog->resize(500,260);
     auto *layout=new QVBoxLayout(dialog); auto *form=new QFormLayout;
-    auto *target=new QDoubleSpinBox(dialog); target->setObjectName("wishTargetAmountSpinBox"); target->setRange(0,99999999.99); target->setDecimals(2); target->setPrefix(QStringLiteral("¥ ")); target->setSpecialValueText(QStringLiteral("不设置")); target->setValue(double(m_track.targetCents)/100);
-    auto *url=new QLineEdit(m_track.sourceUrl,dialog); url->setObjectName("wishPriceUrlEdit"); url->setMaxLength(2000); form->addRow(QStringLiteral("目标价"),target); form->addRow(QStringLiteral("商品链接"),url); layout->addLayout(form);
+    auto *target=new EmptyAmountSpinBox(dialog,QStringLiteral("不设置目标价（元）")); target->setObjectName("wishTargetAmountSpinBox"); target->setRange(0,99999999.99); target->setDecimals(2); target->setValue(double(m_track.targetCents)/100);
+    auto *url=new QLineEdit(m_track.sourceUrl,dialog); url->setObjectName("wishPriceUrlEdit"); url->setMaxLength(2000); form->addRow(QStringLiteral("目标价（元）"),target); form->addRow(QStringLiteral("商品链接"),url); layout->addLayout(form);
     auto *error=ShellWidgets::label(QString(),dialog,"error"); layout->addWidget(error); auto *buttons=new QHBoxLayout;
     auto *cancel=new QPushButton(QStringLiteral("取消"),dialog); auto *save=new QPushButton(QStringLiteral("保存"),dialog); save->setObjectName("saveWishPriceTargetButton"); save->setProperty("primary",true); buttons->addWidget(cancel); buttons->addStretch(); buttons->addWidget(save); layout->addLayout(buttons);
     connect(cancel,&QPushButton::clicked,dialog,&QDialog::reject);

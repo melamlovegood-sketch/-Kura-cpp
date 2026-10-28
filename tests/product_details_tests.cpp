@@ -150,7 +150,7 @@ void ProductDetailsTests::productNamesOpenUnifiedDetailsAndPriceActionsAreCompac
     QTemporaryDir dir; DatabaseManager database(dir.filePath("entry.sqlite")); QVERIFY(database.initialize()); PriceRepository prices(database); qint64 id=0; QVERIFY(prices.intake(draft().name,"online_shopping",25300,QStringLiteral("手动记录"),"entry",id)); QVERIFY(prices.configure(id,20000,"https://example.com/product"));
     MainWindow window(database.databasePath()); window.resize(1250,920); window.show(); window.showPage(MainWindow::Page::Wishlist); settle();
     auto *table=window.findChild<QTableWidget *>("wishlistTable"); QCOMPARE(table->rowCount(),1); table->selectRow(0); settle();
-    window.findChild<QAction *>("wishProductInfoAction")->trigger(); settle(); auto *dialog=window.findChild<ProductDetailsDialog *>(); QVERIFY(dialog); dialog->reject(); settle();
+    window.findChild<QPushButton *>("wishProductInfoButton")->click(); settle(); auto *dialog=window.findChild<ProductDetailsDialog *>(); QVERIFY(dialog); dialog->reject(); settle();
     QVERIFY(window.findChild<QPushButton *>("wishPriceButton")->isVisible());
     window.findChild<QPushButton *>("wishPriceButton")->click(); settle(); auto *pricesDialog=window.findChild<WishPriceDialog *>(); QVERIFY(pricesDialog); QCOMPARE(pricesDialog->findChild<QTableWidget *>("wishPriceHistoryTable")->rowCount(),1); pricesDialog->reject(); settle();
     const auto preview=qEnvironmentVariable("KURA_PREVIEW_DIR"); if (!preview.isEmpty()) { QVERIFY(QDir().mkpath(preview)); QVERIFY(window.grab().save(preview+"/price-card-simple.png")); }

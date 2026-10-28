@@ -6,6 +6,27 @@
 #include <QVBoxLayout>
 
 namespace ShellWidgets {
+inline constexpr int PageWidth = 1040;
+inline constexpr int PageMargin = 28;
+inline constexpr int PageSpacing = 24;
+
+inline void pageLayout(QVBoxLayout *layout)
+{
+    layout->setContentsMargins(PageMargin, 24, PageMargin, 32);
+    layout->setSpacing(PageSpacing);
+}
+
+inline QLabel *pageTitle(const QString &text, QWidget *parent, const char *name)
+{
+    auto *title = new QLabel(text, parent);
+    title->setTextFormat(Qt::PlainText);
+    title->setWordWrap(true);
+    title->setProperty("pageTitle", true);
+    title->setObjectName(QLatin1String(name));
+    title->setMinimumHeight(42);
+    return title;
+}
+
 inline QLabel *label(const QString &text, QWidget *parent, const char *role = nullptr)
 {
     auto *result = new QLabel(text, parent);
@@ -19,8 +40,8 @@ inline QVBoxLayout *card(QWidget *parent, QFrame **frame = nullptr)
     auto *box = new QFrame(parent);
     box->setProperty("card", true);
     auto *layout = new QVBoxLayout(box);
-    layout->setContentsMargins(18, 16, 18, 16);
-    layout->setSpacing(12);
+    layout->setContentsMargins(22, 20, 22, 20);
+    layout->setSpacing(14);
     if (frame) *frame = box;
     return layout;
 }

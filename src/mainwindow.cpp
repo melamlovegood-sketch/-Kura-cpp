@@ -1,5 +1,8 @@
 #include "ModernSelectors.h"
 #include "mainwindow.h"
+#include "AchievementCelebration.h"
+#include "OnboardingDialog.h"
+#include "SplashScreen.h"
 #include "AddTransactionDialog.h"
 #include "ExpenseSummary.h"
 #include "CategorySummary.h"
@@ -7,26 +10,22 @@
 #include "BillingWorkspace.h"
 #include "BillImportDialog.h"
 #include <QDialog>
-#include "StatisticsWidget.h"
 #include "WishlistWidget.h"
 #include "DataManagementWidget.h"
 #include "AppTheme.h"
 #include "HomeWidget.h"
 #include "AppearanceWidget.h"
+#include "PricePerspectiveHint.h"
 #include "ShellWidgets.h"
 #include "AISettings.h"
 #include "DecisionDialog.h"
 #include "WishPoolRepository.h"
 #include "CategoryCatalog.h"
 #include "ExecutionWidget.h"
-#include "ReviewWidget.h"
 #include "MonthlyReviewWidget.h"
 #include "PriceWidget.h"
 #include "ProductDetailsDialog.h"
-#include "ShoppingProfileDialog.h"
 #include "PurchaseRepository.h"
-#include <QTabWidget>
-#include <QTabBar>
 
 #include <QAbstractButton>
 #include <QAbstractItemView>
@@ -53,6 +52,7 @@
 #include <QDir>
 #include <QVBoxLayout>
 #include <QWidget>
+#include <QStyleHints>
 
 MainWindow::MainWindow(QWidget *parent)
     : MainWindow(QString(), parent)
@@ -66,10 +66,16 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
     m_preferencesPath = m_database.databasePath() == QStringLiteral(":memory:")
         ? QString() : m_database.databasePath() + QStringLiteral(".ui.ini");
     m_theme = QStringLiteral("warm");
+    setProperty("fontScale",100);
     if (!m_preferencesPath.isEmpty()) {
         QSettings preferences(m_preferencesPath, QSettings::IniFormat);
-        m_theme = AppTheme::normalized(preferences.value(QStringLiteral("appearance/theme")).toString());
+        m_theme = preferences.value(QStringLiteral("appearance/theme"),"warm").toString();
+        const int scale=preferences.value("appearance/fontScale",100).toInt();
+        setProperty("fontScale",scale==115 || scale==130?scale:100);
+        setProperty("reducedMotion",preferences.value("appearance/reducedMotion",false).toBool());
     }
+    m_themePreference=m_theme=="system"?m_theme:AppTheme::normalized(m_theme);
+    m_theme=m_themePreference=="system"?(QGuiApplication::styleHints()->colorScheme()==Qt::ColorScheme::Dark?QStringLiteral("dark"):QStringLiteral("warm")):m_themePreference;
     AppTheme::apply(this, m_theme);
     const QSize screen = QGuiApplication::primaryScreen()
         ? QGuiApplication::primaryScreen()->availableGeometry().size() : QSize(1240, 960);
@@ -131,8 +137,8 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
     m_categoryFilter = new ModernComboBox(central);
     m_categoryFilter->setObjectName(QStringLiteral("categoryFilter"));
     m_categoryFilter->addItem(QStringLiteral("全部分类"), QString());
-    for (const auto &category : Transaction::categories())
-        m_categoryFilter->addItem(category, category);
+    for (const auto &key : CategoryCatalog::purposeKeys())
+        m_categoryFilter->addItem(CategoryCatalog::purposeLabel(key), key);
     filters->addWidget(m_categoryFilter);
     m_useDateRange = new QCheckBox(QStringLiteral("按日期"), central);
     m_useDateRange->setObjectName(QStringLiteral("useDateRangeCheckBox"));
@@ -205,7 +211,7 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
     auto *categoryBox = new QGroupBox(QStringLiteral("本月分类支出"), central);
     m_categoryBox = categoryBox;
     auto *categoryLayout = new QVBoxLayout(categoryBox);
-    m_categorySummaryTable = new QTableWidget(Transaction::categories().size(), 2, categoryBox);
+    m_categorySummaryTable = new QTableWidget(CategoryCatalog::purposeKeys().size(), 2, categoryBox);
     m_categorySummaryTable->setObjectName(QStringLiteral("categorySummaryTable"));
     m_categorySummaryTable->setAccessibleName(QStringLiteral("本月分类支出"));
     m_categorySummaryTable->setHorizontalHeaderLabels({QStringLiteral("分类"), QStringLiteral("金额")});
@@ -218,7 +224,7 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
     m_categorySummaryTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     m_categorySummaryTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
     m_categorySummaryTable->setMinimumWidth(200);
-    const auto categories = Transaction::categories();
+    QStringList categories; for (const auto &key:CategoryCatalog::purposeKeys()) categories << CategoryCatalog::purposeLabel(key);
     for (int row = 0; row < categories.size(); ++row) {
         m_categorySummaryTable->setItem(row, 0, new QTableWidgetItem(categories[row]));
         auto *amount = new QTableWidgetItem(QStringLiteral("—"));
@@ -241,7 +247,7 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
     m_billingPages = new QStackedWidget(m_pages);
     m_billingPages->setObjectName("billingPageStack");
     m_billingWorkspace = new BillingWorkspace(m_database,m_preferencesPath,m_billingPages);
-    auto *billingScroll = ShellWidgets::centeredPage(m_billingWorkspace,1160,m_billingPages,Qt::AlignTop);
+    auto *billingScroll = ShellWidgets::centeredPage(m_billingWorkspace,ShellWidgets::PageWidth,m_billingPages,Qt::AlignTop);
     billingScroll->setObjectName("billingWorkspaceScrollArea");
     m_billingPages->addWidget(billingScroll);
     m_billingPages->addWidget(recordScroll);
@@ -272,44 +278,23 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
         });
         dialog->open();
     });
-    m_statisticsWidget = new StatisticsWidget(m_pages);
-    m_reviewTabs=new QTabWidget(m_pages); m_reviewTabs->setObjectName("reviewSectionsTabs");
-    m_reviewWidget=new ReviewWidget(m_database,m_reviewTabs);
-    m_monthlyReviewWidget=new MonthlyReviewWidget(m_database,m_preferencesPath,m_reviewTabs);
-    auto *monthlyPage=ShellWidgets::centeredPage(m_monthlyReviewWidget,894,m_reviewTabs,Qt::AlignTop);
+    m_monthlyReviewWidget=new MonthlyReviewWidget(m_database,m_preferencesPath,m_pages);
+    auto *monthlyPage=ShellWidgets::centeredPage(m_monthlyReviewWidget,ShellWidgets::PageWidth,m_pages,Qt::AlignTop);
     monthlyPage->setObjectName("monthlyReviewScrollArea");
-    m_reviewTabs->addTab(monthlyPage,QStringLiteral("月度复盘"));
-    const auto reviewDetail=[this](QWidget *content,const char *backName) {
-        auto *page=new QWidget;
-        auto *column=new QVBoxLayout(page); column->setContentsMargins(0,12,0,0); column->setSpacing(0);
-        auto *back=new QPushButton(QStringLiteral("← 返回月度复盘"),page);
-        back->setObjectName(QLatin1String(backName)); back->setProperty("reviewLink",true);
-        column->addWidget(back,0,Qt::AlignLeft); column->addWidget(content);
-        connect(back,&QPushButton::clicked,this,[this] { m_reviewTabs->setCurrentIndex(0); });
-        return ShellWidgets::centeredPage(page,1120,m_reviewTabs,Qt::AlignTop);
-    };
-    m_reviewTabs->addTab(reviewDetail(m_reviewWidget,"purchaseReviewBackButton"),QStringLiteral("购买后复盘"));
-    m_reviewTabs->addTab(reviewDetail(m_statisticsWidget,"reviewStatisticsBackButton"),QStringLiteral("年度与分类统计"));
-    m_reviewTabs->tabBar()->hide(); m_pages->addWidget(m_reviewTabs);
-    connect(m_monthlyReviewWidget,&MonthlyReviewWidget::purchaseReviewRequested,this,[this] { m_reviewTabs->setCurrentIndex(1); });
-    connect(m_monthlyReviewWidget,&MonthlyReviewWidget::statisticsRequested,this,[this](const QDate &month) {
-        m_statisticsWidget->setMonth(month); m_reviewTabs->setCurrentIndex(2);
-    });
+    m_pages->addWidget(monthlyPage);
     m_wishlistWidget = new WishlistWidget(m_database, m_pages);
     auto *planningPage = new QWidget(m_pages);
     planningPage->setObjectName(QStringLiteral("planningPage"));
     auto *planningLayout = new QVBoxLayout(planningPage);
-    planningLayout->setContentsMargins(32, 40, 32, 70);
-    planningLayout->setSpacing(0);
+    ShellWidgets::pageLayout(planningLayout);
     auto *planningHeading = new QHBoxLayout;
-    auto *planningTitle = ShellWidgets::label(QStringLiteral("清单"), planningPage);
-    planningTitle->setObjectName(QStringLiteral("planningTitleLabel"));
+    auto *planningTitle = ShellWidgets::pageTitle(QStringLiteral("清单"), planningPage, "planningTitleLabel");
     planningHeading->addWidget(planningTitle, 1);
     planningHeading->addWidget(m_wishlistWidget->takeAddButton());
-    planningLayout->addLayout(planningHeading); planningLayout->addSpacing(24);
+    planningLayout->addLayout(planningHeading);
     planningLayout->addWidget(m_wishlistWidget);
     planningLayout->addStretch();
-    auto *planningScroll = ShellWidgets::centeredPage(planningPage, 804, m_pages, Qt::AlignTop);
+    auto *planningScroll = ShellWidgets::centeredPage(planningPage, ShellWidgets::PageWidth, m_pages, Qt::AlignTop);
     planningScroll->setObjectName(QStringLiteral("planningScrollArea"));
     m_pages->addWidget(planningScroll);
     m_dataWidget = new DataManagementWidget(m_database, m_pages);
@@ -323,10 +308,14 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
     m_pages->addWidget(ShellWidgets::centeredPage(dataPage, 800, m_pages));
     connect(backToSettings, &QPushButton::clicked, this, [this] { showPage(Page::Settings); });
     m_homeWidget = new HomeWidget(m_database, m_pages);
-    m_pages->addWidget(ShellWidgets::centeredPage(m_homeWidget, 640, m_pages));
-    m_pages->addWidget(ShellWidgets::centeredPage(buildExecutionPage(), 640, m_pages,Qt::AlignTop));
+    auto *homeScroll = ShellWidgets::centeredPage(m_homeWidget, ShellWidgets::PageWidth, m_pages, Qt::AlignTop);
+    homeScroll->setObjectName("homeScrollArea");
+    m_pages->addWidget(homeScroll);
+    auto *executionScroll = ShellWidgets::centeredPage(buildExecutionPage(), ShellWidgets::PageWidth, m_pages,Qt::AlignTop);
+    executionScroll->setObjectName("executionScrollArea");
+    m_pages->addWidget(executionScroll);
     m_appearanceWidget = new AppearanceWidget(m_preferencesPath,m_pages);
-    m_pages->addWidget(ShellWidgets::centeredPage(m_appearanceWidget, 640, m_pages,Qt::AlignTop));
+    m_pages->addWidget(ShellWidgets::centeredPage(m_appearanceWidget, 780, m_pages,Qt::AlignTop));
     connect(m_homeWidget, &HomeWidget::budgetRequested, this, [this] {
         showPage(Page::Billing);
         m_billingWorkspace->setMonth(QDate::currentDate());
@@ -334,20 +323,34 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
     });
     connect(m_homeWidget, &HomeWidget::wishlistRequested, this, [this] { showPage(Page::Wishlist); });
     connect(m_wishlistWidget,&WishlistWidget::goalRequested,this,&MainWindow::choosePoolGoal);
-    connect(m_homeWidget,&HomeWidget::reviewRequested,this,[this] { m_reviewTabs->setCurrentIndex(1); showPage(Page::Review); });
-    connect(m_homeWidget,&HomeWidget::pricesRequested,this,[this] { showPage(Page::Wishlist); m_wishlistWidget->showPrices(); });
-    connect(m_homeWidget,&HomeWidget::attentionChanged,this,[this](qint64 count) { m_dueReviews=count; updateNavigation(); });
+    connect(m_homeWidget, &HomeWidget::readyWishesRequested, this, [this](qint64 wishId) {
+        showPage(Page::Wishlist);
+        m_wishlistWidget->showReadyWishes(wishId);
+    });
+    connect(m_homeWidget, &HomeWidget::executionRequested, this, [this] { showPage(Page::Execution); });
     connect(m_wishlistWidget,&WishlistWidget::pricesChanged,this,[this] { m_homeWidget->refresh(); });
     connect(m_wishlistWidget,&WishlistWidget::settingsRequested,this,[this] { showPage(Page::Settings); });
-    connect(m_reviewWidget,&ReviewWidget::reviewsChanged,this,[this] { m_homeWidget->refresh(); m_monthlyReviewWidget->refresh(); m_executionWidget->refreshReferences(); });
     connect(m_appearanceWidget, &AppearanceWidget::themeSelected, this, [this](const QString &theme) { applyTheme(theme, true); });
-    connect(m_appearanceWidget, &AppearanceWidget::dataRequested, this, [this] { showPage(Page::Data); });
-    connect(m_appearanceWidget,&AppearanceWidget::shoppingProfileRequested,this,[this] {
-        auto *dialog=new ShoppingProfileDialog(m_database,this); dialog->setAttribute(Qt::WA_DeleteOnClose);
-        connect(dialog,&ShoppingProfileDialog::profileChanged,this,[this] { m_executionWidget->refreshReferences(); }); dialog->open();
+    connect(m_appearanceWidget,&AppearanceWidget::displayOptionsChanged,this,[this](int scale,bool reduced) {
+        setProperty("fontScale",scale); setProperty("reducedMotion",reduced);
+        applyTheme(m_themePreference,false);
+        if (!m_preferencesPath.isEmpty()) {
+            QSettings preferences(m_preferencesPath,QSettings::IniFormat);
+            preferences.setValue("appearance/fontScale",scale); preferences.setValue("appearance/reducedMotion",reduced); preferences.sync();
+            if (preferences.status()!=QSettings::NoError) statusBar()->showMessage(QStringLiteral("显示已更新，但未能保存到本机。"),8000);
+        }
     });
+    connect(QGuiApplication::styleHints(),&QStyleHints::colorSchemeChanged,this,[this] { if (m_themePreference=="system") applyTheme("system",false); });
+    connect(m_dataWidget,&DataManagementWidget::backupStateChanged,this,[this] { m_appearanceWidget->setBackupSummary(m_dataWidget->backupSummary()); });
+    m_appearanceWidget->setBackupSummary(m_dataWidget->backupSummary());
+    connect(m_appearanceWidget,&AppearanceWidget::pricePerspectiveChanged,this,[this] {
+        for (auto *hint:findChildren<PricePerspectiveHint *>()) hint->refresh();
+        m_wishlistWidget->refresh();
+    });
+    connect(m_appearanceWidget, &AppearanceWidget::dataRequested, this, [this] { showPage(Page::Data); });
+    connect(m_appearanceWidget, &AppearanceWidget::onboardingRequested, this, [this] { showOnboarding(); });
     buildShell();
-    applyTheme(m_theme, false);
+    applyTheme(m_themePreference, false);
     statusBar()->showMessage(QStringLiteral("消费记录会自动保存到本机。"));
     statusBar()->setToolTip(m_database.databasePath());
 
@@ -360,17 +363,6 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
     connect(m_applyFilterButton, &QPushButton::clicked, this, &MainWindow::applyFilters);
     connect(m_resetFilterButton, &QPushButton::clicked, this, &MainWindow::resetFilters);
     connect(m_useDateRange, &QCheckBox::toggled, this, &MainWindow::updateActionState);
-    connect(m_statisticsWidget, &StatisticsWidget::monthActivated, this, [this](const QDate &month) {
-        m_categoryFilter->setCurrentIndex(0);
-        m_useDateRange->setChecked(true);
-        m_startDate->setDate(month);
-        m_endDate->setDate(QDate(month.year(), month.month(), month.daysInMonth()));
-        applyFilters();
-        m_budgetWidget->setMonth(month);
-        showPage(Page::Billing);
-        m_billingWorkspace->setMonth(month);
-        m_billingPages->setCurrentIndex(1);
-    });
 
     connect(m_wishlistWidget, &WishlistWidget::expenseRecorded, this, [this](qint64 id) {
         if (reloadTransactions(id))
@@ -380,6 +372,7 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
     });
     connect(m_dataWidget,&DataManagementWidget::recordsImported,this,[this](int count) { if (reloadTransactions()) statusBar()->showMessage(QStringLiteral("已导入 %1 笔历史消费，预算和复盘已更新。").arg(count),10000); else statusBar()->showMessage(QStringLiteral("导入已保存，但页面刷新失败，请检查数据库。"),10000); });
     connect(m_dataWidget, &DataManagementWidget::databaseRestored, this, [this] {
+        if(auto *notifier=findChild<AchievementNotifier *>()) notifier->resetBaseline();
         for (auto *dialog:findChildren<ProductDetailsDialog *>()) dialog->reject();
         m_monthlyReviewWidget->cancelAnalysis();
         m_filter = {};
@@ -388,7 +381,7 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
         m_budgetWidget->setDatabaseAvailable(false);
         m_budgetWidget->setDatabaseAvailable(true);
         m_billingWorkspace->resetAfterRestore();
-        m_wishlistWidget->refresh(); m_executionWidget->reloadState(); m_reviewWidget->refresh();
+        m_wishlistWidget->refresh(); m_executionWidget->reloadState();
         if (reloadTransactions())
             statusBar()->showMessage(QStringLiteral("备份已恢复，所有页面已刷新。"), 8000);
         else
@@ -397,7 +390,6 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
     m_databaseReady = m_database.initialize();
     if (!m_databaseReady) {
         showError(m_database.lastError());
-        m_statisticsWidget->showLoadError(m_database.lastError());
         m_emptyHint->setText(QStringLiteral("数据库不可用，请检查上述错误后重新启动程序。"));
         statusBar()->showMessage(QStringLiteral("数据保存暂不可用。"));
     } else if (!reloadTransactions()) {
@@ -412,11 +404,18 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
     m_dataWidget->setDatabaseAvailable(m_databaseReady);
     m_homeWidget->setDatabaseAvailable(m_databaseReady);
     m_executionWidget->setDatabaseAvailable(m_databaseReady);
-    m_reviewWidget->setDatabaseAvailable(m_databaseReady);
     m_monthlyReviewWidget->setDatabaseAvailable(m_databaseReady);
     m_homeDecision->setEnabled(m_databaseReady);
 
     showPage(Page::Home);
+    if(m_databaseReady) {
+        auto *notifier=new AchievementNotifier(m_database,this);
+        connect(notifier,&AchievementNotifier::collectionRequested,this,[this] {
+            showPage(Page::Review);
+            if(auto *scroll=findChild<QScrollArea *>("monthlyReviewScrollArea"))
+                if(auto *wall=findChild<QWidget *>("achievementWall")) scroll->ensureWidgetVisible(wall,0,24);
+        });
+    }
 }
 
 void MainWindow::buildShell()
@@ -426,7 +425,7 @@ void MainWindow::buildShell()
     auto *layout = new QVBoxLayout(shell);
     layout->setContentsMargins(0, 0, 0, 0); layout->setSpacing(0);
     auto *header = new QFrame(shell);
-    header->setObjectName(QStringLiteral("shellHeader")); header->setFixedHeight(52);
+    header->setObjectName(QStringLiteral("shellHeader")); header->setFixedHeight(46);
     auto *headerLayout = new QHBoxLayout(header);
     headerLayout->setContentsMargins(16, 0, 16, 0); headerLayout->setSpacing(10);
     auto *balance = new QWidget(header); balance->setFixedWidth(32); headerLayout->addWidget(balance);
@@ -449,19 +448,18 @@ void MainWindow::buildShell()
     m_homeActionBar = new QWidget(shell);
     m_homeActionBar->setObjectName(QStringLiteral("homeActionBar"));
     auto *homeActionLayout = new QHBoxLayout(m_homeActionBar);
-    homeActionLayout->setContentsMargins(24, 12, 24, 12);
-    homeActionLayout->addStretch();
+    homeActionLayout->setContentsMargins(0, 0, 0, 0);
     m_homeDecision = new QPushButton(QStringLiteral("我现在想买……"), m_homeActionBar);
     m_homeDecision->setObjectName(QStringLiteral("homeDecisionButton"));
-    m_homeDecision->setFixedHeight(46); m_homeDecision->setMaximumWidth(592);
+    m_homeDecision->setFixedHeight(40); m_homeDecision->setMinimumWidth(220);
     m_homeDecision->setCursor(Qt::PointingHandCursor);
-    homeActionLayout->addWidget(m_homeDecision, 1); homeActionLayout->addStretch();
+    homeActionLayout->addWidget(m_homeDecision);
     connect(m_homeDecision, &QPushButton::clicked, this, &MainWindow::openDecisionDialog);
-    layout->addWidget(m_homeActionBar);
+    m_homeWidget->setPrimaryAction(m_homeActionBar);
     auto *footer = new QFrame(shell);
-    footer->setObjectName(QStringLiteral("shellFooter")); footer->setFixedHeight(68);
+    footer->setObjectName(QStringLiteral("shellFooter")); footer->setFixedHeight(60);
     auto *navigation = new QHBoxLayout(footer);
-    navigation->setContentsMargins(12, 8, 12, 8); navigation->setSpacing(24); navigation->addStretch();
+    navigation->setContentsMargins(12, 4, 12, 4); navigation->setSpacing(24); navigation->addStretch();
     const QList<Page> pages = {Page::Home, Page::Billing, Page::Wishlist, Page::Execution, Page::Review};
     const QStringList names = {"home", "billing", "wishlist", "execution", "review"};
     const QStringList labels = {QStringLiteral("主页"), QStringLiteral("账单"), QStringLiteral("清单"), QStringLiteral("执行"), QStringLiteral("复盘")};
@@ -489,7 +487,7 @@ QWidget *MainWindow::buildExecutionPage()
         if (auto *dialog=findChild<DecisionDialog *>()) dialog->setInitialText(initialText);
     });
     connect(m_executionWidget,&ExecutionWidget::wishlistRequested,this,[this] { m_wishlistWidget->refresh(); m_homeWidget->refresh(); showPage(Page::Wishlist); });
-    connect(m_executionWidget,&ExecutionWidget::purchaseRequested,this,[this](const Transaction &draft,qint64 sessionId,qint64 brandId) { openTransactionDialog(&draft,true,sessionId,brandId); });
+    connect(m_executionWidget,&ExecutionWidget::purchaseRequested,this,[this](const Transaction &draft,qint64 sessionId) { openTransactionDialog(&draft,true,sessionId); });
     return m_executionWidget;
 }
 
@@ -498,13 +496,72 @@ void MainWindow::showPage(Page page)
     m_pages->setCurrentIndex(int(page));
     if (page == Page::Billing) { m_billingPages->setCurrentIndex(0); m_billingWorkspace->refresh(); }
     if (page == Page::Home) m_homeWidget->refresh();
-    if (page == Page::Review) { m_reviewWidget->refresh(); m_monthlyReviewWidget->refresh(); }
+    if (page == Page::Review) m_monthlyReviewWidget->refresh();
     if (page == Page::Execution) m_executionWidget->refreshReferences();
     if (page == Page::Wishlist) m_wishlistWidget->refresh();
+    if (page == Page::Settings) m_appearanceWidget->refreshSummary();
     updateNavigation();
 }
 
 MainWindow::Page MainWindow::currentPage() const { return static_cast<Page>(m_pages->currentIndex()); }
+
+void MainWindow::startFirstRunGuide()
+{
+    if (!m_databaseReady || m_preferencesPath.isEmpty() || m_guideShown || !isVisible()) return;
+    const QSettings preferences(m_preferencesPath,QSettings::IniFormat);
+    if (preferences.value("onboarding/version",0).toInt()>=2 && preferences.value("onboarding/dismissed",false).toBool()) return;
+    if (auto *splash=findChild<SplashScreen *>()) {
+        connect(splash,&QObject::destroyed,this,&MainWindow::startFirstRunGuide,Qt::QueuedConnection);
+        return;
+    }
+    showOnboarding(true);
+}
+
+void MainWindow::showOnboarding(bool resume)
+{
+    if (!m_databaseReady) return;
+    if (auto *existing=findChild<OnboardingDialog *>()) { existing->raise(); return; }
+    m_guideShown=true;
+    const auto previousPage=currentPage();
+    const auto *manual=findChild<QAbstractButton *>("bookkeepingManualModeButton");
+    const bool wasManual=manual && manual->isChecked();
+    const bool statusWasVisible=statusBar()->isVisible();
+    statusBar()->hide();
+    auto *guide=new OnboardingDialog(m_database,m_preferencesPath,centralWidget(),resume);
+    connect(guide,&OnboardingDialog::tourStarted,this,[this,statusWasVisible] { statusBar()->setVisible(statusWasVisible); });
+    connect(guide,&OnboardingDialog::pageRequested,this,[this](int page) {
+        if (page==int(Page::Settings)) m_appearanceWidget->showHome();
+        showPage(static_cast<Page>(page));
+    });
+    connect(guide,&OnboardingDialog::preferencesSaved,m_appearanceWidget,&AppearanceWidget::reloadOnboardingSettings);
+    connect(guide,&OnboardingDialog::importRequested,this,[this,guide] {
+        guide->hide();
+        auto *dialog=new BillImportDialog(m_database,m_preferencesPath,this);
+        dialog->setAttribute(Qt::WA_DeleteOnClose);
+        connect(dialog,&BillImportDialog::imported,this,[this](int) { reloadTransactions(); });
+        connect(dialog,&QDialog::finished,guide,[guide] { guide->show(); guide->raise(); guide->beginTour(); });
+        dialog->open();
+    });
+    connect(guide,&OnboardingDialog::finished,this,[this,previousPage,wasManual,statusWasVisible](bool completed) {
+        statusBar()->setVisible(statusWasVisible);
+        if (!m_preferencesPath.isEmpty()) {
+            QSettings settings(m_preferencesPath,QSettings::IniFormat);
+            settings.setValue("onboarding/dismissed",true);
+            settings.setValue("onboarding/completed",completed);
+            settings.setValue("onboarding/version",2);
+            settings.remove("onboarding/setupStep"); settings.remove("onboarding/pendingWishId");
+            settings.sync();
+            if (settings.status()!=QSettings::NoError)
+                statusBar()->showMessage(QStringLiteral("引导状态未能保存，下次启动可能再次出现。"),8000);
+        }
+        if (auto *mode=findChild<QAbstractButton *>(wasManual?"bookkeepingManualModeButton":"bookkeepingAiModeButton")) mode->click();
+        m_budgetWidget->refresh(); m_wishlistWidget->refresh(); m_executionWidget->refreshReferences();
+        m_appearanceWidget->reloadOnboardingSettings();
+        for (auto *hint:findChildren<PricePerspectiveHint *>()) hint->refresh();
+        reloadTransactions(); showPage(previousPage);
+    });
+    guide->show(); guide->raise(); guide->setFocus();
+}
 
 void MainWindow::openDecisionDialog()
 {
@@ -513,8 +570,8 @@ void MainWindow::openDecisionDialog()
     auto *dialog=new DecisionDialog(m_database,AISettingsStore::load(m_preferencesPath),this);
     dialog->setAttribute(Qt::WA_DeleteOnClose);
     dialog->setResearchAvailable(m_executionWidget->activeSessionId()==0);
-    connect(dialog,&DecisionDialog::researchRequested,this,[this,dialog](const ParsedProduct &product,const QByteArray &image,qint64 brandId,qint64 productId) {
-        if (!m_executionWidget->prepareDecision(product,image,brandId,productId)) {
+    connect(dialog,&DecisionDialog::researchRequested,this,[this,dialog](const ParsedProduct &product,const QByteArray &image,qint64 productId) {
+        if (!m_executionWidget->prepareDecision(product,image,productId)) {
             dialog->showHandoffError(QStringLiteral("暂时无法开始研究。请先处理执行页进行中的决策，或稍后重试。")); return;
         }
         dialog->accept(); showPage(Page::Execution);
@@ -540,7 +597,7 @@ void MainWindow::choosePoolGoal(qint64 wishId)
             auto *message=new QMessageBox(QMessageBox::Warning,QStringLiteral("无法设置许愿目标"),repository.lastError(),QMessageBox::Ok,this);
             message->setAttribute(Qt::WA_DeleteOnClose); message->open(); return;
         }
-        m_homeWidget->refresh(); showPage(Page::Home); statusBar()->showMessage(QStringLiteral("许愿目标已设置，暂存的忍住金额已一起计入。"),8000);
+        m_homeWidget->refresh(); m_wishlistWidget->refresh(); statusBar()->showMessage(QStringLiteral("许愿目标已设置，暂存的忍住金额已一起计入。"),8000);
     };
     WishPoolSnapshot pool; WishPoolRepository repository(m_database);
     if (!repository.load(pool)) { statusBar()->showMessage(repository.lastError(),8000); return; }
@@ -554,13 +611,14 @@ void MainWindow::choosePoolGoal(qint64 wishId)
 
 void MainWindow::applyTheme(const QString &theme, bool save)
 {
-    m_theme = AppTheme::normalized(theme);
+    m_themePreference=theme=="system"?theme:AppTheme::normalized(theme);
+    m_theme = m_themePreference=="system"?(QGuiApplication::styleHints()->colorScheme()==Qt::ColorScheme::Dark?QStringLiteral("dark"):QStringLiteral("warm")):m_themePreference;
     AppTheme::apply(this, m_theme);
-    m_appearanceWidget->setTheme(m_theme);
+    m_appearanceWidget->setTheme(m_themePreference);
     updateNavigation();
     if (save && !m_preferencesPath.isEmpty()) {
         QSettings preferences(m_preferencesPath, QSettings::IniFormat);
-        preferences.setValue(QStringLiteral("appearance/theme"), m_theme); preferences.sync();
+        preferences.setValue(QStringLiteral("appearance/theme"), m_themePreference); preferences.sync();
         if (preferences.status() != QSettings::NoError)
             statusBar()->showMessage(QStringLiteral("外观已应用，但未能保存到本机。"), 8000);
     }
@@ -572,7 +630,6 @@ void MainWindow::updateNavigation()
     for (auto *button : m_navigation) {
         const bool active = button->property("pageIndex").toInt() == m_pages->currentIndex();
         button->setChecked(active);
-        if (button->property("iconName").toString()==QStringLiteral("review")) button->setText(m_dueReviews>0?QStringLiteral("复盘 · %1").arg(m_dueReviews):QStringLiteral("复盘"));
         button->setIcon(AppTheme::icon(button->property("iconName").toString(), m_theme, active));
     }
     const bool settings = currentPage() == Page::Settings || currentPage() == Page::Data;
@@ -591,9 +648,9 @@ void MainWindow::resizeEvent(QResizeEvent *event)
     }
 }
 
-void MainWindow::openTransactionDialog(const Transaction *existing,bool purchase,qint64 sessionId,qint64 brandId)
+void MainWindow::openTransactionDialog(const Transaction *existing,bool purchase,qint64 sessionId)
 {
-    auto *dialog = existing ? new AddTransactionDialog(*existing, this) : new AddTransactionDialog(this);
+    auto *dialog = existing ? new AddTransactionDialog(*existing, this,m_preferencesPath) : new AddTransactionDialog(this,m_preferencesPath);
     dialog->setAttribute(Qt::WA_DeleteOnClose);
     const bool editing = existing && existing->id()>0;
     if (editing) {
@@ -602,14 +659,12 @@ void MainWindow::openTransactionDialog(const Transaction *existing,bool purchase
         connect(details,&QPushButton::clicked,dialog,[this,dialog,id=existing->id()] { ProductDetailsDialog::openFor(m_database,"transaction",id,dialog); });
     }
     if (purchase) {
-        ShoppingProfileRepository profile(m_database); QList<BrandEntry> brands;
-        if (!profile.loadBrands(brands)) { dialog->deleteLater(); statusBar()->showMessage(profile.lastError(),8000); return; }
-        dialog->setBrands(brands,brandId); dialog->setWindowTitle(QStringLiteral("确认购买 · 安排 7／30 天复盘"));
+        dialog->setWindowTitle(QStringLiteral("确认购买 · 安排 7／30 天复盘"));
     }
     connect(dialog, &AddTransactionDialog::saveRequested, this, [this, dialog, editing,purchase,sessionId] {
         auto transaction = dialog->transaction();
         PurchaseRepository purchases(m_database);
-        const bool saved = editing ? m_repository.update(transaction) : purchase?purchases.record(transaction,dialog->selectedBrandId(),sessionId):m_repository.add(transaction);
+        const bool saved = editing ? m_repository.update(transaction) : purchase?purchases.record(transaction,0,sessionId):m_repository.add(transaction);
         if (!saved) {
             dialog->showSaveError(QStringLiteral("保存失败：%1").arg(purchase?purchases.lastError():m_repository.lastError()));
             return;
@@ -728,19 +783,17 @@ bool MainWindow::reloadTransactions(qint64 selectedId)
     QList<Transaction> loaded;
     if (!m_repository.findAll(loaded)) {
         showError(m_repository.lastError());
-        m_statisticsWidget->showLoadError(m_repository.lastError());
         m_billingWorkspace->showLoadError(m_repository.lastError());
         return false;
     }
     const auto today = QDate::currentDate();
     const auto summary = ExpenseSummary::calculate(loaded, m_filter, today);
-    const auto categories = CategorySummary::calculate(loaded, today);
+    const auto categories = CategorySummary::calculatePurposes(loaded, today);
     for (int row = 0; row < categories.size(); ++row) {
         auto *amount = m_categorySummaryTable->item(row, 1);
         amount->setText(Transaction::formatAmount(categories[row].amountCents));
         amount->setData(Qt::UserRole, categories[row].amountCents);
     }
-    m_statisticsWidget->setTransactions(loaded);
     m_transactions.clear();
     for (const auto &transaction : loaded) {
         if (m_filter.matches(transaction))
@@ -758,8 +811,8 @@ bool MainWindow::reloadTransactions(qint64 selectedId)
         dateItem->setData(Qt::UserRole, transaction.id());
         m_transactionTable->setItem(row, 0, dateItem);
         m_transactionTable->setItem(row, 1, new QTableWidgetItem(transaction.description()));
-        auto *categoryItem=new QTableWidgetItem(CategoryCatalog::label(transaction.detailCategory()));
-        categoryItem->setToolTip(QStringLiteral("%1 · 汇总分类：%2").arg(CategoryCatalog::isBasic(transaction.detailCategory())?QStringLiteral("基础生活"):QStringLiteral("可支配"),transaction.category()));
+        auto *categoryItem=new QTableWidgetItem(CategoryCatalog::purposeLabel(transaction.purposeCategory()));
+        categoryItem->setToolTip(QStringLiteral("%1 · %2").arg(CategoryCatalog::purposeLabel(transaction.purposeCategory()),CategoryCatalog::scopeLabel(transaction.budgetScope())));
         m_transactionTable->setItem(row,2,categoryItem);
         auto *amountItem = new QTableWidgetItem(Transaction::formatAmount(transaction.amountCents()));
         amountItem->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
@@ -793,7 +846,7 @@ bool MainWindow::reloadTransactions(qint64 selectedId)
     m_budgetWidget->refresh();
     m_billingWorkspace->refresh();
     m_homeWidget->refresh();
-    m_reviewWidget->refresh(); m_monthlyReviewWidget->refresh(); m_executionWidget->refreshReferences();
+    m_monthlyReviewWidget->refresh(); m_executionWidget->refreshReferences();
     updateActionState();
     return true;
 }

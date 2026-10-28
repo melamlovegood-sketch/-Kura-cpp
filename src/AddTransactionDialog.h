@@ -4,9 +4,9 @@
 #include <QDialog>
 #include <QString>
 #include "Transaction.h"
-#include "ShoppingProfileRepository.h"
 
 class QComboBox;
+class ExpenseClassification;
 class QCheckBox;
 class QDateEdit;
 class QDoubleSpinBox;
@@ -23,8 +23,8 @@ class AddTransactionDialog : public QDialog
     Q_OBJECT
 
 public:
-    explicit AddTransactionDialog(QWidget *parent = nullptr);
-    explicit AddTransactionDialog(const Transaction &transaction, QWidget *parent = nullptr);
+    explicit AddTransactionDialog(QWidget *parent = nullptr, const QString &settingsPath = {});
+    explicit AddTransactionDialog(const Transaction &transaction, QWidget *parent = nullptr, const QString &settingsPath = {});
 
     QString description() const;
     double amount() const;
@@ -35,8 +35,6 @@ public:
     Transaction transaction() const;
     void showSaveError(const QString &message);
     void completeSave();
-    void setBrands(const QList<BrandEntry> &brands,qint64 selectedId=0);
-    qint64 selectedBrandId() const;
 
 signals:
     void saveRequested();
@@ -47,9 +45,12 @@ public slots:
 private:
     qint64 m_transactionId = 0;
     QByteArray m_sourceImage;
+    QString m_originalDetail;
+    QString detailCategory() const;
     QLineEdit *m_descriptionEdit = nullptr;
     QDoubleSpinBox *m_amountSpinBox = nullptr;
     QComboBox *m_categoryComboBox = nullptr;
+    ExpenseClassification *m_classification = nullptr;
     QDateEdit *m_dateEdit = nullptr;
     QTimeEdit *m_timeEdit = nullptr;
     QCheckBox *m_timeKnownCheckBox = nullptr;
@@ -57,7 +58,4 @@ private:
     QLabel *m_errorLabel = nullptr;
     QPushButton *m_saveButton = nullptr;
     QFormLayout *m_form = nullptr;
-    QComboBox *m_brandCombo = nullptr;
-    QList<BrandEntry> m_brands;
-    void refreshBrands();
 };

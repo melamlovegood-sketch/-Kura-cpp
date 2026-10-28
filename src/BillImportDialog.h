@@ -55,7 +55,7 @@ private:
     QList<QLabel *> m_steps;
     QLabel *m_empty,*m_fileName,*m_footerSummary,*m_footerHint,*m_doneTitle,*m_doneHint,*m_loadingHint;
     QLabel *m_summary,*m_error;
-    QComboBox *m_platform,*m_bulkCategory;
+    QComboBox *m_platform,*m_bulkCategory,*m_bulkScope;
     QCheckBox *m_transfers,*m_recent,*m_selectAll;
     QPushButton *m_choose,*m_reload,*m_bulk,*m_import,*m_classify,*m_cancelWork,*m_close,*m_again,*m_skipped,*m_bulkToggle;
     QPushButton *m_newTab,*m_reviewTab,*m_excludedTab;

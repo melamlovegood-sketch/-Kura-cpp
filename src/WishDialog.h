@@ -7,6 +7,7 @@ class QComboBox;
 class QSpinBox;
 class QLabel;
 class QPushButton;
+class QButtonGroup;
 
 class WishDialog : public QDialog
 {
@@ -27,7 +28,7 @@ private:
     QDoubleSpinBox *m_amount;
     QComboBox *m_category;
     QSpinBox *m_days;
-    QComboBox *m_priority;
+    QButtonGroup *m_priority;
     QLineEdit *m_reason;
     QLabel *m_error;
     QPushButton *m_save;

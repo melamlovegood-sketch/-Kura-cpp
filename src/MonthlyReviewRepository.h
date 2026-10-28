@@ -3,7 +3,7 @@
 #include "MonthlyBudget.h"
 #include <QDateTime>
 #include <QJsonObject>
-struct MonthlyReviewExpense { qint64 id=0,cents=0; QString name,category,note; QDate date; QTime time; int tag=0; QString purchaseNote; };
+struct MonthlyReviewExpense { qint64 id=0,cents=0; QString name,category,note; QDate date; QTime time; int tag=0; QString purchaseNote,purposeCategory,budgetScope; };
 struct MonthlyCategory { QString key; qint64 cents=0,previousCents=0,count=0; };
 struct MonthlyReviewData {
     QDate month;

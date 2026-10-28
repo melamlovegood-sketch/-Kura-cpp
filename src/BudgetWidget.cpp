@@ -1,3 +1,4 @@
+#include "EmptyAmountSpinBox.h"
 #include "ModernSelectors.h"
 #include "AppTheme.h"
 #include "BudgetWidget.h"
@@ -31,20 +32,21 @@ BudgetWidget::BudgetWidget(DatabaseManager &database, QWidget *parent)
     controls->addWidget(m_monthEdit);
     controls->addStretch();
     auto *amounts = new QHBoxLayout;
-    amounts->addWidget(new QLabel(QStringLiteral("基础生活额度"), group));
-    m_basicAmountEdit = new QDoubleSpinBox(group);
+    amounts->addWidget(new QLabel(QStringLiteral("必要生活预算"), group));
+    m_basicAmountEdit = new EmptyAmountSpinBox(group,QStringLiteral("0.00（元）"));
     m_basicAmountEdit->setObjectName(QStringLiteral("basicBudgetAmountSpinBox"));
+    m_basicAmountEdit->setToolTip(QStringLiteral("为基本吃饭、通勤、日用品等预留；例如每月 1000 元。"));
     m_basicAmountEdit->setDecimals(2); m_basicAmountEdit->setRange(0.0, 99999999.99);
-    m_basicAmountEdit->setSingleStep(100.0); m_basicAmountEdit->setSuffix(QStringLiteral(" 元"));
+    m_basicAmountEdit->setSingleStep(100.0);
     amounts->addWidget(m_basicAmountEdit,1);
-    amounts->addWidget(new QLabel(QStringLiteral("可支配额度"), group));
-    m_amountEdit = new QDoubleSpinBox(group);
+    amounts->addWidget(new QLabel(QStringLiteral("自由消费预算"), group));
+    m_amountEdit = new EmptyAmountSpinBox(group,QStringLiteral("0.00（元）"));
     m_amountEdit->setObjectName(QStringLiteral("budgetAmountSpinBox"));
+    m_amountEdit->setToolTip(QStringLiteral("在必要生活之外，自己决定如何花的钱，也可以留着不花。两项预算分别计算，不自动挪用。"));
     m_amountEdit->setLocale(QLocale(QLocale::Chinese, QLocale::China));
     m_amountEdit->setDecimals(2);
     m_amountEdit->setRange(0.0, static_cast<double>(MonthlyBudget::MaximumLimitCents) / 100.0);
     m_amountEdit->setSingleStep(100.0);
-    m_amountEdit->setSuffix(QStringLiteral(" 元"));
     amounts->addWidget(m_amountEdit,1);
     m_saveButton = new QPushButton(QStringLiteral("保存预算"), group);
     m_saveButton->setObjectName(QStringLiteral("saveBudgetButton"));
@@ -176,8 +178,8 @@ void BudgetWidget::saveBudget()
 void BudgetWidget::renderStatus()
 {
     m_splitLabel->setText(m_status.hasBudget && !m_status.hasSplit
-        ? QStringLiteral("旧总预算尚未分配，暂填入可支配额度。请确认两项金额后保存，原预算在保存前保持不变。")
-        : QStringLiteral("基础生活已花 %1 · 可支配已花 %2。按细分类归属计算，不受列表筛选影响。")
+        ? QStringLiteral("旧总预算尚未分配，暂填入自由消费预算。请确认两项金额后保存，原预算在保存前保持不变。")
+        : QStringLiteral("必要生活已花 %1 · 自由消费已花 %2。两项预算分别计算，余额不自动挪用。")
             .arg(Transaction::formatAmount(m_status.basicSpentCents),Transaction::formatAmount(m_status.discretionarySpentCents)));
     m_spentLabel->setText(QStringLiteral("已消费：%1").arg(Transaction::formatAmount(m_status.spentCents)));
     m_limitLabel->setText(m_status.hasBudget
@@ -199,7 +201,7 @@ void BudgetWidget::renderStatus()
         AppTheme::setTone(m_statusLabel, QStringLiteral("warning"));
     } else if (m_status.hasSplit && (m_status.basicSpentCents>m_status.basicLimitCents || m_status.discretionarySpentCents>m_status.discretionaryLimitCents)) {
         m_statusLabel->setText(QStringLiteral("%1预算已超支，请检查两项剩余额度。")
-            .arg(m_status.basicSpentCents>m_status.basicLimitCents ? QStringLiteral("基础生活") : QStringLiteral("可支配")));
+            .arg(m_status.basicSpentCents>m_status.basicLimitCents ? QStringLiteral("必要生活") : QStringLiteral("自由消费")));
         AppTheme::setTone(m_statusLabel,QStringLiteral("danger"));
     } else {
         m_statusLabel->setText(QStringLiteral("当前支出在预算内。"));

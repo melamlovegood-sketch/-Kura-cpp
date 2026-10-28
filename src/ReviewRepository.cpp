@@ -61,15 +61,11 @@ bool ReviewRepository::complete(qint64 id,int frequency,int worthiness,const QSt
     m_error.clear();
     if (id<=0 || frequency<0 || frequency>2 || worthiness < -1 || worthiness>1 || note.size()>500 || !WorkflowStorage::validTime(now)) { m_error=QStringLiteral("请选择使用频率和值得度，备注最多 500 字。"); return false; }
     WorkflowStorage::Transaction transaction(m_database.database(),m_error); if (!transaction.ok()) return false;
-    QSqlQuery query(m_database.database()); query.prepare("SELECT brand_id FROM review_tasks WHERE id=:id AND completed_ms IS NULL AND due_ms<=:now"); query.bindValue(":id",id); query.bindValue(":now",now.toMSecsSinceEpoch());
+    QSqlQuery query(m_database.database()); query.prepare("SELECT id FROM review_tasks WHERE id=:id AND completed_ms IS NULL AND due_ms<=:now"); query.bindValue(":id",id); query.bindValue(":now",now.toMSecsSinceEpoch());
     if (!query.exec() || !query.next()) { m_error=QStringLiteral("复盘尚未到期、已完成或已经取消，请刷新。"); return false; }
-    const auto brandId=query.value(0).toLongLong(); query.finish();
+    query.finish();
     query.prepare("UPDATE review_tasks SET frequency=:frequency,worthiness=:worth,note=:note,completed_ms=:now WHERE id=:id AND completed_ms IS NULL AND due_ms<=:now");
     query.bindValue(":id",id); query.bindValue(":frequency",frequency); query.bindValue(":worth",worthiness); query.bindValue(":note",note.trimmed().isNull()?QStringLiteral(""):note.trimmed()); query.bindValue(":now",now.toMSecsSinceEpoch());
     if (!query.exec() || query.numRowsAffected()!=1) { m_error=QStringLiteral("复盘保存失败或已被处理，请刷新后重试。"); return false; } query.finish();
-    if (brandId && worthiness) {
-        query.prepare("UPDATE brands SET weight=MAX(-100,MIN(100,weight+:delta)) WHERE id=:id AND active=1"); query.bindValue(":delta",worthiness); query.bindValue(":id",brandId);
-        if (!query.exec()) { m_error=WorkflowStorage::error(query.lastError()); return false; } query.finish();
-    }
     return transaction.commit();
 }

@@ -29,6 +29,7 @@ private:
     void recognize();
     void ask();
     void associate();
+    void share();
     void setBusy(bool busy);
     void error(const QString &message);
     ProductRepository m_repository;
@@ -43,8 +44,9 @@ private:
     QLabel *m_summary,*m_status,*m_error,*m_preview;
     QWidget *m_editor,*m_gallery,*m_captureTools,*m_chatPanel;
     QVBoxLayout *m_galleryLayout;
-    QPlainTextEdit *m_notes,*m_transcript,*m_input;
+    QPlainTextEdit *m_notes,*m_reason,*m_alternatives,*m_transcript,*m_input;
     QPushButton *m_edit,*m_upload,*m_paste,*m_recognize,*m_save,*m_cancelEdit,*m_ask,*m_cancel;
     QToolButton *m_more,*m_images,*m_chatToggle;
+    QPushButton *m_share;
     QScrollArea *m_scroll;
 };

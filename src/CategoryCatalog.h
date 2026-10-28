@@ -8,4 +8,12 @@ QString legacyCategory(const QString &key);
 QString fromLegacy(const QString &category);
 bool isBasic(const QString &key);
 bool isValid(const QString &key);
+// Expense purpose and budget scope are independent of the legacy product catalog.
+QStringList purposeKeys();
+QString purposeLabel(const QString &key);
+bool validPurpose(const QString &key);
+QString purposeFromDetail(const QString &key);
+QString detailForPurpose(const QString &key);
+QString scopeLabel(const QString &scope);
+QString basicExpenseSql(const QString &prefix = {});
 }

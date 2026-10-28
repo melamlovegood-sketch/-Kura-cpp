@@ -6,28 +6,40 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QToolTip>
+#include <QtMath>
 
 namespace {
 QColor mix(const QColor &a,const QColor &b,qreal ratio) { return QColor::fromRgbF(a.redF()*(1-ratio)+b.redF()*ratio,a.greenF()*(1-ratio)+b.greenF()*ratio,a.blueF()*(1-ratio)+b.blueF()*ratio); }
 QFont sizedFont(const QWidget *,int pixels,bool medium=false) { return AppTypography::sans(pixels,medium?QFont::Medium:QFont::Normal); }
+constexpr qreal calendarGap=6,calendarHeaderHeight=29,calendarMaximumCellSide=60;
+qreal calendarCellSide(int width) { return qBound(qreal(0),(width-calendarGap*6)/7.0,calendarMaximumCellSide); }
+qreal calendarGridLeft(int width) { return (width-(7*calendarCellSide(width)+6*calendarGap))/2; }
 }
-BillingCalendar::BillingCalendar(QWidget *parent):QWidget(parent) { setObjectName("billingCalendar"); setMouseTracking(true); setFocusPolicy(Qt::StrongFocus); setAccessibleName(QStringLiteral("消费日历")); setMinimumHeight(330); }
-QSize BillingCalendar::minimumSizeHint() const { return {380,330}; }
+BillingCalendar::BillingCalendar(QWidget *parent):QWidget(parent) { setObjectName("billingCalendar"); setMouseTracking(true); setFocusPolicy(Qt::StrongFocus); setAccessibleName(QStringLiteral("消费日历")); QSizePolicy policy(QSizePolicy::Expanding,QSizePolicy::Fixed); policy.setHeightForWidth(true); setSizePolicy(policy); }
+QSize BillingCalendar::sizeHint() const { return {456,heightForWidth(456)}; }
+QSize BillingCalendar::minimumSizeHint() const { return {380,heightForWidth(380)}; }
 void BillingCalendar::setSnapshot(const BillingSnapshot &snapshot)
 {
     if (!m_selected.isValid() || m_selected.year()!=snapshot.month.year() || m_selected.month()!=snapshot.month.month()) { const auto today=QDate::currentDate(); m_selected=snapshot.month.year()==today.year() && snapshot.month.month()==today.month()?today:snapshot.month; }
-    m_snapshot=snapshot; m_hasSnapshot=true; const int weeks=(snapshot.month.dayOfWeek()-1+snapshot.month.daysInMonth()+6)/7; setFixedHeight(29+weeks*61); update();
+    m_snapshot=snapshot; m_hasSnapshot=true; updateGeometry(); update();
+}
+int BillingCalendar::heightForWidth(int width) const
+{
+    if (!m_hasSnapshot) return int(calendarHeaderHeight);
+    const int weeks=(m_snapshot.month.dayOfWeek()-1+m_snapshot.month.daysInMonth()+6)/7;
+    return qCeil(calendarHeaderHeight+weeks*(calendarCellSide(width)+calendarGap));
 }
 QRectF BillingCalendar::cellRect(int day) const
 {
-    if (!m_hasSnapshot || day<1 || day>m_snapshot.days.size()) return {}; const int index=m_snapshot.month.dayOfWeek()-1+day-1; const qreal gap=6,cellWidth=(width()-gap*6)/7.0; return {index%7*(cellWidth+gap),29+(index/7)*61.0,cellWidth,55};
+    if (!m_hasSnapshot || day<1 || day>m_snapshot.days.size()) return {}; const int index=m_snapshot.month.dayOfWeek()-1+day-1; const qreal side=calendarCellSide(width()); return {calendarGridLeft(width())+index%7*(side+calendarGap),calendarHeaderHeight+(index/7)*(side+calendarGap),side,side};
 }
 void BillingCalendar::paintEvent(QPaintEvent *)
 {
     QPainter painter(this); painter.setRenderHint(QPainter::Antialiasing); const auto ink=AppTheme::color(this,"ink"),muted=AppTheme::color(this,"muted"),card=AppTheme::color(this,"card"),accent=AppTheme::color(this,"accent"),inset=AppTheme::color(this,"inset");
     if (!m_hasSnapshot) { painter.setPen(muted); painter.drawText(rect(),Qt::AlignCenter,QStringLiteral("尚未加载账单。")); return; }
     painter.setFont(sizedFont(this,11)); painter.setPen(muted); const QStringList weekdays={QStringLiteral("一"),QStringLiteral("二"),QStringLiteral("三"),QStringLiteral("四"),QStringLiteral("五"),QStringLiteral("六"),QStringLiteral("日")};
-    for (int column=0;column<7;++column) painter.drawText(QRectF(column*width()/7.0,0,width()/7.0,20),Qt::AlignCenter,weekdays[column]);
+    const qreal side=calendarCellSide(width());
+    for (int column=0;column<7;++column) painter.drawText(QRectF(calendarGridLeft(width())+column*(side+calendarGap),0,side,20),Qt::AlignCenter,weekdays[column]);
     qint64 maximum=1; for (const auto &point:m_snapshot.days) maximum=qMax(maximum,point.cents);
     for (const auto &point:m_snapshot.days) {
         const auto box=cellRect(point.date.day()); const qreal ratio=double(point.cents)/maximum; const bool strong=point.cents>0 && ratio>.65; const auto background=point.cents==0?mix(card,inset,.70):strong?accent:mix(card,accent,ratio>.20?.42:.19); const auto foreground=strong?AppTheme::color(this,"onAccent"):ink;

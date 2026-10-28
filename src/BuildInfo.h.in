@@ -1,0 +1,3 @@
+#pragma once
+#define KURA_VERSION "@PROJECT_VERSION@"
+#define KURA_BUILD_DATE "@KURA_BUILD_DATE@"

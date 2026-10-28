@@ -6,9 +6,19 @@
 #include "DecisionDialog.h"
 #include "ShoppingProfileRepository.h"
 #include "TransactionRepository.h"
+#include "WishlistRepository.h"
+#include "ProductDetailsDialog.h"
+#include "DatabaseBackupService.h"
+#include "PurchaseRepository.h"
+#include "UnifiedWishlistRepository.h"
+#include "WishPoolRepository.h"
+#include "WorkflowSchema.h"
+#include "AddTransactionDialog.h"
 #include "WishDialog.h"
 #include "mainwindow.h"
 #include <QCheckBox>
+#include <QBuffer>
+#include <QImage>
 #include <QComboBox>
 #include <QDir>
 #include <QDoubleSpinBox>
@@ -50,6 +60,7 @@ void start(MainWindow &window) { next(window); field<QPushButton>(window,"startE
 class ExecutionUiTests:public QObject {
     Q_OBJECT
 private slots:
+    void durationStepperKeepsTimerAndPreferences();
     void stepsAndRealBudget();
     void editsAndNotesSurviveRestart();
     void wishlistCancelAndSave();
@@ -59,7 +70,300 @@ private slots:
     void modesSwitchWithoutRestartingSession();
     void expiredTimerNeverBuysAutomatically();
     void focusedInputSurvivesPurchaseFlowAndKeepsSharedEntry();
+    void abandonPurchaseFromDecisionActions_data();
+    void abandonPurchaseFromDecisionActions();
+    void wishlistAmountCanBeTypedFromUnknownPrice_data();
+    void wishlistAmountCanBeTypedFromUnknownPrice();
+    void entryWorkspaceUsesRealWishesAndReflows();
+    void readyWishDecision_data();
+    void readyWishDecision();
+    void wishDecisionRejectsStaleItemsAndRestoresLinks();
 };
+
+void ExecutionUiTests::entryWorkspaceUsesRealWishesAndReflows()
+{
+    QTemporaryDir dir; DatabaseManager db(dir.filePath("workspace.sqlite")); QVERIFY(db.initialize());
+    ExecutionWidget execution(db,QString()); execution.setProperty("page",true); execution.resize(1040,1000); AppTheme::apply(&execution,"warm"); execution.setDatabaseAvailable(true); execution.show(); settle();
+    QVERIFY(field<QLabel>(execution,"executionPendingEmpty")->isVisible());
+    auto examples=execution.findChildren<QPushButton *>();
+    for (auto *button:examples) if (button->property("executionExample").toBool() && button->text()==QStringLiteral("衣服")) { button->click(); break; }
+    QCOMPARE(field<QLineEdit>(execution,"executionNameEdit")->text(),QStringLiteral("一件针织衫"));
+    WishlistRepository wishes(db); QList<WishItem> added; const auto now=QDateTime::currentDateTimeUtc();
+    for (int i=0;i<5;++i) {
+        WishItem wish; wish.name=QStringLiteral("想了很久的通勤针织开衫 %1").arg(i); wish.estimatedCents=29900+i*100; wish.coolingDays=3;
+        QVERIFY(wishes.add(wish,now.addDays(-6+i))); added.append(wish);
+    }
+    QVERIFY(wishes.abandon(added[0].id));
+    ShoppingProfileRepository profile(db); const QStringList rules={QStringLiteral("月生活费2000元，必要生活与自由消费各1000元，不挪用吃饭钱。"),QStringLiteral("超过200元先冷静3天；重复款先不买，先看看衣柜。"),QStringLiteral("喜欢不等于必须现在买，想一想会用多少次。"),QStringLiteral("符号 < > & 保留原样，不作为富文本。")}; QVERIFY(profile.saveRules(rules));
+    QVERIFY(execution.refreshReferences()); settle();
+    QCOMPARE(field<QLineEdit>(execution,"executionNameEdit")->text(),QStringLiteral("一件针织衫"));
+    QVERIFY(!field<QLabel>(execution,"executionPendingEmpty")->isVisible());
+    QCOMPARE(field<QLabel>(execution,"executionPendingSummary")->text(),QStringLiteral("3 件已结束冷静期"));
+    auto rows=execution.findChildren<QWidget *>("executionPendingRow"); QCOMPARE(rows.size(),3);
+    QCOMPARE(rows[0]->findChild<QLabel *>("executionPendingName")->text(),added[3].name);
+    QVERIFY(rows[0]->findChild<QLabel *>("executionPendingDetail")->text().contains(QStringLiteral("冷静期已结束")));
+    QVERIFY(rows[2]->findChild<QLabel *>("executionPendingDetail")->text().contains(QStringLiteral("冷静期已结束")));
+    QSignalSpy navigation(&execution,&ExecutionWidget::wishlistRequested); field<QPushButton>(execution,"executionAllPendingButton")->click(); QCOMPARE(navigation.count(),1);
+    QCOMPARE(rows[0]->findChild<QPushButton *>("executionPendingOpenButton")->text(),QStringLiteral("去决策 →"));
+    QVERIFY(!execution.findChild<ProductDetailsDialog *>());
+    const auto preview=qEnvironmentVariable("KURA_PREVIEW_DIR");
+    for (const auto &theme:{QStringLiteral("warm"),QStringLiteral("cool"),QStringLiteral("dark")}) {
+        execution.setProperty("fontScale",100); execution.resize(1040,1000); AppTheme::apply(&execution,theme); settle();
+        auto *steps=field<QWidget>(execution,"executionSteps"),*rulesCard=field<QWidget>(execution,"executionRulesCard");
+        QVERIFY(rulesCard->x()>steps->geometry().right());
+        for (auto *label:execution.findChildren<QLabel *>()) if (label->isVisible() && label->wordWrap()) QVERIFY2(label->height()>=label->heightForWidth(label->width()),qPrintable(label->objectName()));
+        if (!preview.isEmpty()) { QVERIFY(QDir().mkpath(preview)); QVERIFY(execution.grab().save(preview+"/execution-workspace-"+theme+".png")); }
+    }
+    execution.setProperty("fontScale",130); execution.resize(500,1600); AppTheme::apply(&execution,"warm"); settle();
+    auto *steps=field<QWidget>(execution,"executionSteps"),*rulesCard=field<QWidget>(execution,"executionRulesCard"); QVERIFY(rulesCard->y()>steps->geometry().bottom());
+    QVERIFY(execution.minimumSizeHint().width()<=500);
+    if (!preview.isEmpty()) QVERIFY(execution.grab().save(preview+"/execution-workspace-compact.png"));
+    execution.resize(1040,1000); execution.setProperty("fontScale",100); AppTheme::apply(&execution,"warm"); settle();
+    field<QPushButton>(execution,"executionNextButton")->click(); settle(); QVERIFY(!field<QWidget>(execution,"executionPendingSection")->isVisible());
+    field<QPushButton>(execution,"executionBackButton")->click(); settle(); QVERIFY(field<QWidget>(execution,"executionPendingSection")->isVisible());
+    for (int i=1;i<added.size();++i) QVERIFY(wishes.abandon(added[i].id));
+    QVERIFY(execution.refreshReferences()); settle(); QVERIFY(field<QLabel>(execution,"executionPendingEmpty")->isVisible());
+    for (auto *row:rows) QVERIFY(!row->isVisible());
+    QCOMPARE(count(db,"execution_sessions"),0); QCOMPARE(count(db,"transactions"),0);
+    execution.setDatabaseAvailable(false); QVERIFY(!field<QPushButton>(execution,"executionAllPendingButton")->isEnabled());
+}
+
+void ExecutionUiTests::readyWishDecision_data()
+{
+    QTest::addColumn<QString>("mode"); QTest::addColumn<QString>("outcome");
+    for (const auto &mode:QStringList{"fast","research"}) for (const auto &outcome:QStringList{"wait","buy","skip"})
+        QTest::newRow(qPrintable(mode+"-"+outcome)) << mode << outcome;
+}
+
+void ExecutionUiTests::readyWishDecision()
+{
+    QFETCH(QString,mode); QFETCH(QString,outcome);
+    QTemporaryDir dir; const auto path=dir.filePath("ready-wish.sqlite"); DatabaseManager db(path); QVERIFY(db.initialize());
+    WishlistRepository wishes(db); const auto now=QDateTime::currentDateTimeUtc();
+    WishItem ready; ready.name=QStringLiteral("通勤耳机"); ready.estimatedCents=19900; ready.coolingDays=3; ready.priority=1; ready.reason=QStringLiteral("通勤听课"); ready.detailCategory="online_shopping";
+    QImage image(20,20,QImage::Format_RGB32); image.fill(Qt::green); QBuffer buffer(&ready.sourceImage); buffer.open(QIODevice::WriteOnly); QVERIFY(image.save(&buffer,"PNG"));
+    QVERIFY(wishes.add(ready,now.addDays(-5)));
+    auto cooling=ready; cooling.id=0; cooling.name=QStringLiteral("还在冷静的耳机"); QVERIFY(wishes.add(cooling,now));
+    WishPoolRepository pool(db); QVERIFY(pool.setGoal(ready.id));
+    UnifiedWishlistRepository catalog(db); qint64 track=0; QVERIFY(catalog.recordPrice(ready.id,18900,"manual","ready-price",now,track));
+    MainWindow window(path); window.resize(1180,860); window.show(); window.showPage(MainWindow::Page::Execution); settle();
+    auto *execution=field<ExecutionWidget>(window,"executionWidget");
+    QCOMPARE(field<QLabel>(*execution,"executionPendingSummary")->text(),QStringLiteral("1 件已结束冷静期"));
+    auto rows=execution->findChildren<QWidget *>("executionPendingRow"); QVERIFY(rows[0]->isVisible()); QVERIFY(!rows[1]->isVisible());
+    rows[0]->findChild<QPushButton *>("executionPendingOpenButton")->click(); settle();
+    QVERIFY(!field<QWidget>(*execution,"executionInputCard")->isVisible());
+    QVERIFY(field<QPushButton>(*execution,"startExecutionButton")->isVisible());
+    QCOMPARE(field<QLineEdit>(*execution,"executionNameEdit")->text(),ready.name);
+    QCOMPARE(field<QDoubleSpinBox>(*execution,"executionEstimatedAmountSpinBox")->value(),199.0);
+    QCOMPARE(field<QLineEdit>(*execution,"executionPurposeEdit")->text(),ready.reason);
+    QCOMPARE(count(db,"execution_sessions"),0); QCOMPARE(count(db,"transactions"),0); QVERIFY(!execution->findChild<ProductDetailsDialog *>());
+    field<QComboBox>(*execution,"executionModeComboBox")->setCurrentIndex(mode=="fast"?0:1);
+    field<QPushButton>(*execution,"startExecutionButton")->click(); settle();
+    ExecutionRepository sessions(db); ExecutionSession active; QVERIFY(sessions.loadActive(active)); QCOMPARE(active.wishId,ready.id); QVERIFY(active.id>0);
+    rows[0]->findChild<QPushButton *>("executionPendingOpenButton")->click(); QCOMPARE(execution->activeSessionId(),active.id);
+    // The original item association and evidence must survive a restart.
+    QVERIFY(execution->reloadState()); QCOMPARE(execution->activeSessionId(),active.id);
+    QVERIFY(field<QPushButton>(*execution,"executionWishButton")->text().contains(QStringLiteral("继续等等")));
+    if (mode=="fast") field<QPushButton>(*execution,"executionFastDecideButton")->click();
+    if (outcome=="wait") {
+        field<QPushButton>(*execution,"executionWishButton")->click(); settle(); QVERIFY(!window.findChild<WishDialog *>());
+    } else if (outcome=="skip") {
+        field<QPushButton>(*execution,"skipExecutionButton")->click(); settle();
+    } else {
+        field<QPushButton>(*execution,"executionBuyButton")->click(); settle();
+        auto *confirmation=window.findChild<AddTransactionDialog *>(); QVERIFY(confirmation);
+        QCOMPARE(confirmation->transaction().sourceImage(),ready.sourceImage);
+        confirmation->findChild<QPushButton *>("saveButton")->click(); settle();
+        QVERIFY(!window.findChild<AddTransactionDialog *>());
+    }
+    QCOMPARE(count(db,"wishlist"),2); QCOMPARE(count(db,"transactions"),outcome=="buy"?1:0);
+    QVERIFY(sessions.loadActive(active)); QCOMPARE(active.id,0);
+    QList<WishItem> saved; QVERIFY(wishes.findAll(saved));
+    for (const auto &wish:saved) if (wish.id==ready.id) {
+        QCOMPARE(wish.status,outcome=="buy"?WishStatus::Purchased:outcome=="skip"?WishStatus::Abandoned:WishStatus::Waiting);
+        QCOMPARE(wish.readyAt,ready.readyAt); QCOMPARE(wish.priority,1);
+        if (outcome=="buy") QVERIFY(wish.transactionId>0);
+    }
+    WishPoolSnapshot goal; QVERIFY(pool.load(goal)); QCOMPARE(goal.wishId,outcome=="wait"?ready.id:0);
+    QString error; QVERIFY2(WorkflowSchema::validate(db.database(),error),qPrintable(error));
+}
+
+void ExecutionUiTests::wishDecisionRejectsStaleItemsAndRestoresLinks()
+{
+    QTemporaryDir dir; DatabaseManager db(dir.filePath("stale-wish.sqlite")); QVERIFY(db.initialize()); WishlistRepository wishes(db);
+    WishItem wish; wish.name=QStringLiteral("到期的背包"); wish.estimatedCents=5000; wish.coolingDays=1;
+    QVERIFY(wishes.add(wish,QDateTime::currentDateTimeUtc().addDays(-3)));
+    ExecutionWidget execution(db,QString()); execution.resize(1040,1000); execution.setDatabaseAvailable(true); execution.show(); settle();
+    auto *open=field<QPushButton>(execution,"executionPendingOpenButton"); open->click(); settle();
+    QVERIFY(wishes.update(wish)); // Re-starting cooling after entry must prevent Start.
+    field<QPushButton>(execution,"startExecutionButton")->click(); QCOMPARE(count(db,"execution_sessions"),0);
+    field<QPushButton>(execution,"executionBackButton")->click(); settle();
+    open->setProperty("wishId",wish.id); open->click(); QCOMPARE(count(db,"execution_sessions"),0);
+    QVERIFY(field<QWidget>(execution,"executionInputCard")->isVisible());
+    QVERIFY(field<QLabel>(execution,"executionPendingEmpty")->isVisible());
+    ExecutionRepository sessions(db); ExecutionSession cold; cold.name=wish.name; cold.category="online_shopping"; cold.wishId=wish.id;
+    QVERIFY(!sessions.start(cold)); QCOMPARE(cold.id,0);
+    QSqlQuery query(db.database()); QVERIFY(query.exec("UPDATE wishlist SET ready_ms=created_ms"));
+    QVERIFY(execution.refreshReferences()); open->click(); field<QComboBox>(execution,"executionModeComboBox")->setCurrentIndex(1);
+    field<QPushButton>(execution,"startExecutionButton")->click();
+    ExecutionSession active; QVERIFY(sessions.loadActive(active)); QCOMPARE(active.wishId,wish.id);
+    ExecutionSession conflict; conflict.name="other"; conflict.category="other"; QVERIFY(!sessions.start(conflict));
+    auto duplicate=wish; duplicate.id=0; QVERIFY(!sessions.deferToWishlist(active.id,duplicate)); QCOMPARE(count(db,"wishlist"),1);
+    DatabaseBackupService backups(db); QString error,safety; BackupInfo info; const auto copy=dir.filePath("with-link.sqlite");
+    QVERIFY2(backups.backup(copy,error),qPrintable(error)); QVERIFY(sessions.finish(active.id,"undecided"));
+    QVERIFY2(backups.prepareRestore(copy,info,error),qPrintable(error)); QVERIFY2(backups.restorePrepared(safety,error),qPrintable(error));
+    QVERIFY(sessions.loadActive(active)); QCOMPARE(active.wishId,wish.id);
+    QVERIFY(query.exec("CREATE TRIGGER fail_linked_skip BEFORE UPDATE OF status ON wishlist WHEN NEW.status=2 BEGIN SELECT RAISE(ABORT,'test'); END"));
+    QVERIFY(!sessions.finish(active.id,"skipped")); ExecutionSession stillActive; QVERIFY(sessions.loadActive(stillActive)); QCOMPARE(stillActive.id,active.id);
+    QVERIFY(query.exec("DROP TRIGGER fail_linked_skip"));
+    QVERIFY(query.exec("CREATE TRIGGER fail_linked_purchase BEFORE INSERT ON transactions BEGIN SELECT RAISE(ABORT,'test'); END"));
+    PurchaseRepository purchases(db); Transaction expense(0,wish.name,4500,QStringLiteral("购物"),QDate::currentDate());
+    QVERIFY(!purchases.record(expense,0,active.id)); QCOMPARE(expense.id(),0); QCOMPARE(count(db,"transactions"),0);
+    ExecutionSession retry; QVERIFY(sessions.loadActive(retry)); QCOMPARE(retry.id,active.id);
+    QList<WishItem> saved; QVERIFY(wishes.findAll(saved)); QCOMPARE(saved.first().status,WishStatus::Waiting);
+    QVERIFY(query.exec("DROP TRIGGER fail_linked_purchase")); QVERIFY(purchases.record(expense,0,active.id));
+    auto second=Transaction(0,wish.name,4500,QStringLiteral("购物"),QDate::currentDate()); QVERIFY(!purchases.record(second,0,active.id)); QCOMPARE(count(db,"transactions"),1);
+    QVERIFY(wishes.findAll(saved)); QCOMPARE(saved.first().status,WishStatus::Purchased);
+    // Old backups without the new association table remain restorable.
+    QVERIFY(query.exec("DROP TABLE execution_wishes")); const auto legacy=dir.filePath("legacy.sqlite"); QVERIFY(backups.backup(legacy,error)); QVERIFY(db.initialize());
+    QVERIFY2(backups.prepareRestore(legacy,info,error),qPrintable(error)); QVERIFY2(backups.restorePrepared(safety,error),qPrintable(error)); QCOMPARE(count(db,"execution_wishes"),0);
+}
+
+void ExecutionUiTests::durationStepperKeepsTimerAndPreferences()
+{
+    QTemporaryDir dir; DatabaseManager db(dir.filePath("duration.sqlite")); QVERIFY(db.initialize());
+    const auto settings=dir.filePath("preferences.ini");
+    ExecutionWidget execution(db,settings); execution.setDatabaseAvailable(true); execution.resize(620,1000);
+    AppTheme::apply(&execution,"warm"); execution.show(); settle();
+    field<QLineEdit>(execution,"executionNameEdit")->setText(QStringLiteral("围巾"));
+    field<QPushButton>(execution,"executionNextButton")->click(); settle();
+    auto *minutes=field<QSpinBox>(execution,"executionMinutesSpinBox");
+    auto *less=field<QToolButton>(execution,"executionMinutesDecreaseButton");
+    auto *more=field<QToolButton>(execution,"executionMinutesIncreaseButton");
+    QVERIFY(minutes->isVisible()); const int initial=minutes->value();
+    QTest::mouseClick(more,Qt::LeftButton); QCOMPARE(minutes->value(),initial+1);
+    QTest::mouseClick(less,Qt::LeftButton); QCOMPARE(minutes->value(),initial);
+    minutes->setValue(1); QVERIFY(!less->isEnabled()); QVERIFY(more->isEnabled());
+    QTest::mouseClick(more,Qt::LeftButton); QCOMPARE(minutes->value(),2); QVERIFY(less->isEnabled());
+    minutes->setValue(120); QVERIFY(!more->isEnabled());
+    QTest::mouseClick(less,Qt::LeftButton); QCOMPARE(minutes->value(),119); QVERIFY(more->isEnabled());
+    minutes->setFocus(); minutes->selectAll(); QTest::keyClicks(minutes,"3"); QTest::keyClick(minutes,Qt::Key_Tab);
+    QCOMPARE(minutes->value(),3);
+    QVERIFY(field<QPushButton>(execution,"executionFastChoiceButton")->text().contains(QStringLiteral("3 分钟")));
+    if (auto *focused=QApplication::focusWidget()) focused->clearFocus();
+    for (const auto &theme:{QStringLiteral("warm"),QStringLiteral("cool"),QStringLiteral("dark")}) {
+        AppTheme::apply(&execution,theme); settle();
+        auto *card=field<QWidget>(execution,"executionModeCard");
+        const auto preview=qEnvironmentVariable("KURA_PREVIEW_DIR");
+        if (!preview.isEmpty()) { QVERIFY(QDir().mkpath(preview)); QVERIFY(card->grab().save(preview+"/duration-stepper-"+theme+".png")); }
+    }
+    field<QPushButton>(execution,"executionResearchChoiceButton")->click(); QVERIFY(!minutes->isVisible());
+    field<QPushButton>(execution,"executionFastChoiceButton")->click(); QVERIFY(minutes->isVisible()); QCOMPARE(minutes->value(),3);
+    execution.setDatabaseAvailable(false); QVERIFY(!less->isEnabled()); QVERIFY(!more->isEnabled());
+    execution.setDatabaseAvailable(true);
+    field<QLineEdit>(execution,"executionNameEdit")->setText(QStringLiteral("围巾"));
+    field<QPushButton>(execution,"executionNextButton")->click();
+    field<QPushButton>(execution,"startExecutionButton")->click(); settle();
+    QVERIFY(execution.activeSessionId()>0); QVERIFY(!less->isEnabled()); QVERIFY(!more->isEnabled());
+    ExecutionRepository repository(db); ExecutionSession active; QVERIFY(repository.loadActive(active)); QCOMPARE(active.durationSeconds,180);
+    ExecutionWidget restored(db,settings); QCOMPARE(field<QSpinBox>(restored,"executionMinutesSpinBox")->value(),3);
+}
+
+void ExecutionUiTests::wishlistAmountCanBeTypedFromUnknownPrice_data()
+{
+    QTest::addColumn<QString>("mode"); QTest::addColumn<bool>("submitEmpty");
+    QTest::newRow("fast-first-input") << QStringLiteral("fast") << false;
+    QTest::newRow("fast-after-validation") << QStringLiteral("fast") << true;
+    QTest::newRow("research-first-input") << QStringLiteral("research") << false;
+    QTest::newRow("research-after-validation") << QStringLiteral("research") << true;
+}
+
+void ExecutionUiTests::wishlistAmountCanBeTypedFromUnknownPrice()
+{
+    QFETCH(QString,mode); QFETCH(bool,submitEmpty);
+    QTemporaryDir dir; const auto path=dir.filePath("typed-wish.sqlite"); DatabaseManager db(path); QVERIFY(db.initialize());
+    MainWindow window(path); window.show(); window.showPage(MainWindow::Page::Execution);
+    field<QLineEdit>(window,"executionNameEdit")->setText(QStringLiteral("沐浴露")); next(window);
+    field<QComboBox>(window,"executionModeComboBox")->setCurrentIndex(mode=="fast"?0:1);
+    field<QPushButton>(window,"startExecutionButton")->click(); settle();
+    if (mode=="fast") field<QPushButton>(window,"executionFastDecideButton")->click();
+    field<QPushButton>(window,"executionWishButton")->click(); settle();
+    auto *dialog=field<WishDialog>(window,"wishDialog");
+    auto *amount=field<QDoubleSpinBox>(*dialog,"wishAmountSpinBox"); QCOMPARE(amount->value(),0.0);
+    if (submitEmpty) {
+        field<QPushButton>(*dialog,"saveWishButton")->click(); settle();
+        QVERIFY(dialog->isVisible()); QCOMPARE(count(db,"wishlist"),0);
+    }
+    // Reproduce an ordinary click and typing, without setValue or selecting the hint.
+    auto *editor=amount->findChild<QLineEdit *>(); QVERIFY(editor);
+    QTest::mouseClick(editor,Qt::LeftButton); settle(); QTest::keyClicks(editor,"29.90");
+    QTest::keyClick(editor,Qt::Key_Tab); settle(); QCOMPARE(amount->value(),29.90);
+    field<QPushButton>(*dialog,"wishPriority1Button")->click();
+    field<QPushButton>(*dialog,"saveWishButton")->click(); settle();
+    QCOMPARE(count(db,"wishlist"),1); QCOMPARE(count(db,"transactions"),0);
+    QCOMPARE(field<ExecutionWidget>(window,"executionWidget")->activeSessionId(),0);
+    QSqlQuery query(db.database()); QVERIFY(query.exec("SELECT name,estimated_cents FROM wishlist")); QVERIFY(query.next());
+    QCOMPARE(query.value(0).toString(),QStringLiteral("沐浴露")); QCOMPARE(query.value(1).toLongLong(),2990);
+}
+
+void ExecutionUiTests::abandonPurchaseFromDecisionActions_data()
+{
+    QTest::addColumn<QString>("mode");
+    QTest::addColumn<double>("amount");
+    QTest::addColumn<int>("width");
+    QTest::newRow("research-known-wide") << QStringLiteral("research") << 99.0 << 1000;
+    QTest::newRow("research-unknown-narrow") << QStringLiteral("research") << 0.0 << 500;
+    QTest::newRow("fast-known-narrow") << QStringLiteral("fast") << 99.0 << 500;
+    QTest::newRow("fast-unknown-wide") << QStringLiteral("fast") << 0.0 << 1000;
+}
+
+void ExecutionUiTests::abandonPurchaseFromDecisionActions()
+{
+    QFETCH(QString,mode); QFETCH(double,amount); QFETCH(int,width);
+    QTemporaryDir dir; DatabaseManager db(dir.filePath("abandon.sqlite")); QVERIFY(db.initialize());
+    ExecutionWidget execution(db,QString()); AppTheme::apply(&execution,"warm"); execution.setDatabaseAvailable(true);
+    execution.resize(width,1200); execution.show(); settle();
+    field<QLineEdit>(execution,"executionNameEdit")->setText(QStringLiteral("沐浴露"));
+    field<QDoubleSpinBox>(execution,"executionEstimatedAmountSpinBox")->setValue(amount);
+    field<QPushButton>(execution,"executionNextButton")->click();
+    field<QComboBox>(execution,"executionModeComboBox")->setCurrentIndex(mode=="fast"?0:1);
+    field<QPushButton>(execution,"startExecutionButton")->click(); settle();
+    const auto sessionId=execution.activeSessionId(); QVERIFY(sessionId>0);
+    auto *abandon=field<QPushButton>(execution,"skipExecutionButton");
+    auto *wish=field<QPushButton>(execution,"executionWishButton");
+    auto *buy=field<QPushButton>(execution,"executionBuyButton");
+    if (mode=="fast") {
+        QVERIFY(!abandon->isVisible());
+        field<QPushButton>(execution,"executionFastDecideButton")->click(); settle();
+    }
+    for (auto *button:{wish,buy,abandon}) { QVERIFY(button->isVisible()); QVERIFY(button->isEnabled()); }
+    // All three outcomes must be in the same action group, above the references.
+    QCOMPARE(abandon->parentWidget(),wish->parentWidget()); QCOMPARE(abandon->parentWidget(),buy->parentWidget());
+    if (width<540) {
+        QVERIFY(wish->geometry().bottom()<buy->geometry().top());
+        QVERIFY(buy->geometry().bottom()<abandon->geometry().top());
+    } else {
+        QCOMPARE(abandon->geometry().top(),buy->geometry().top());
+        QVERIFY(buy->geometry().right()<abandon->geometry().left());
+    }
+    const auto preview=qEnvironmentVariable("KURA_PREVIEW_DIR");
+    if (!preview.isEmpty()) {
+        QVERIFY(QDir().mkpath(preview));
+        QVERIFY(abandon->parentWidget()->grab().save(preview+"/decision-actions-"+QLatin1String(QTest::currentDataTag())+".png"));
+    }
+    field<QPlainTextEdit>(execution,"executionNotesEdit")->setPlainText(QStringLiteral("家里还有，决定不买。"));
+    abandon->click(); settle();
+    QCOMPARE(execution.activeSessionId(),0);
+    QVERIFY(field<QLabel>(execution,"executionStatusLabel")->text().contains(QStringLiteral("已记录放弃购买")));
+    QCOMPARE(count(db,"transactions"),0); QCOMPARE(count(db,"wishlist"),0);
+    QCOMPARE(count(db,"execution_sessions"),1);
+    QSqlQuery query(db.database()); query.prepare("SELECT state,notes,closed_ms FROM execution_sessions WHERE id=:id"); query.bindValue(":id",sessionId);
+    QVERIFY(query.exec()); QVERIFY(query.next()); QCOMPARE(query.value(0).toString(),QStringLiteral("skipped"));
+    QVERIFY(QJsonDocument::fromJson(query.value(1).toString().toUtf8())["text"].toString().contains(QStringLiteral("决定不买")));
+    QVERIFY(query.value(2).toLongLong()>0); query.finish();
+    QVERIFY(execution.reloadState()); QCOMPARE(execution.activeSessionId(),0);
+    QVERIFY(!abandon->isVisible());
+}
 
 void ExecutionUiTests::focusedInputSurvivesPurchaseFlowAndKeepsSharedEntry()
 {
@@ -160,9 +464,13 @@ void ExecutionUiTests::wishlistCancelAndSave()
     dialog->reject(); settle(); QCOMPARE(execution->activeSessionId(),sessionId); QCOMPARE(count(db,"wishlist"),0);
     field<QPushButton>(window,"executionWishButton")->click(); settle(); dialog=field<WishDialog>(window,"wishDialog");
     field<QPushButton>(*dialog,"saveWishButton")->click(); settle();
+    QCOMPARE(count(db,"wishlist"),0); QCOMPARE(execution->activeSessionId(),sessionId);
+    field<QPushButton>(*dialog,"wishPriority3Button")->click();
+    field<QPushButton>(*dialog,"saveWishButton")->click(); settle();
     QCOMPARE(count(db,"wishlist"),1); QCOMPARE(count(db,"transactions"),0); QCOMPARE(execution->activeSessionId(),0);
     QCOMPARE(window.currentPage(),MainWindow::Page::Wishlist);
     QSqlQuery q(db.database()); QVERIFY(q.exec("SELECT state FROM execution_sessions")); QVERIFY(q.next()); QCOMPARE(q.value(0).toString(),QStringLiteral("undecided"));
+    QVERIFY(q.exec("SELECT priority FROM wishlist")); QVERIFY(q.next()); QCOMPARE(q.value(0).toInt(),3);
 }
 
 void ExecutionUiTests::wishlistCommitIsAtomic()
@@ -203,7 +511,7 @@ void ExecutionUiTests::productOnlyEntryAndPrinciples()
 {
     QTemporaryDir dir; const auto path=dir.filePath("product-only.sqlite"); DatabaseManager db(path); QVERIFY(db.initialize());
     MainWindow window(path); window.resize(1180,860); window.show(); window.showPage(MainWindow::Page::Execution); settle();
-    QCOMPARE(field<QLabel>(window,"executionHeading")->text(),QStringLiteral("执行层"));
+    QCOMPARE(field<QLabel>(window,"executionHeading")->text(),QStringLiteral("执行"));
     auto *name=field<QLineEdit>(window,"executionNameEdit"); name->setText(QStringLiteral("   "));
     QVERIFY(field<QPushButton>(window,"executionInputButton")->isEnabled());
     field<QPushButton>(window,"executionAddRuleButton")->click(); settle(); auto *editor=field<QDialog>(window,"executionRulesEditor");

@@ -6,6 +6,7 @@
 struct BillDraft {
     int sourceRow=0;
     QString name,originalName,note,category,platform,externalId,key,payloadHash,fingerprint,reason;
+    QString purposeCategory,budgetScope;
     QDate date; QTime time;
     qint64 cents=0;
     bool selected=true,confirmed=false;

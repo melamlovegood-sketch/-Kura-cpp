@@ -2,6 +2,8 @@
 #include "AppTheme.h"
 #include <QApplication>
 #include <QAbstractSpinBox>
+#include <QAbstractScrollArea>
+#include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QEvent>
@@ -26,6 +28,7 @@
 #include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
+#include <QWheelEvent>
 
 namespace {
 class Header final:public QWidget {
@@ -158,7 +161,7 @@ void prepare(QDialog *dialog)
             if(role==QMessageBox::YesRole || role==QMessageBox::AcceptRole) button->setProperty("primary",true);
             if(role==QMessageBox::NoRole || role==QMessageBox::RejectRole) button->setText(QStringLiteral("取消"));
             else if(message->standardButton(button)==QMessageBox::Yes) {
-                const auto title=message->windowTitle(); button->setText(title.contains(QStringLiteral("删除"))?QStringLiteral("确认删除"):title.contains(QStringLiteral("恢复"))?QStringLiteral("确认恢复"):title.contains(QStringLiteral("停用"))?QStringLiteral("停用品牌"):title.contains(QStringLiteral("追踪"))?QStringLiteral("结束追踪"):QStringLiteral("确认"));
+                const auto title=message->windowTitle(); button->setText(title.contains(QStringLiteral("删除"))?QStringLiteral("确认删除"):title.contains(QStringLiteral("恢复"))?QStringLiteral("确认恢复"):title.contains(QStringLiteral("停用"))?QStringLiteral("停用"):title.contains(QStringLiteral("追踪"))?QStringLiteral("结束追踪"):QStringLiteral("确认"));
             } else if(message->standardButton(button)==QMessageBox::Ok) button->setText(QStringLiteral("知道了"));
             if(message->windowTitle().contains(QStringLiteral("删除")) && role==QMessageBox::YesRole) button->setProperty("destructive",true);
             button->style()->unpolish(button); button->style()->polish(button);
@@ -198,7 +201,37 @@ class Filter final:public QObject {
 public:
     explicit Filter(QObject *parent):QObject(parent) {}
     bool eventFilter(QObject *object,QEvent *event) override {
-        if(event->type()==QEvent::Polish) if(auto *dialog=qobject_cast<QDialog *>(object)) prepare(dialog);
+        if(event->type()==QEvent::Polish) {
+            if(auto *dialog=qobject_cast<QDialog *>(object)) prepare(dialog);
+            if(auto *widget=qobject_cast<QWidget *>(object))
+                if((qobject_cast<QComboBox *>(widget) || qobject_cast<QAbstractSpinBox *>(widget)) && widget->focusPolicy()==Qt::WheelFocus)
+                    widget->setFocusPolicy(Qt::StrongFocus);
+        }
+        if(event->type()==QEvent::Wheel) {
+            auto *field=qobject_cast<QWidget *>(object);
+            // Include embedded editors, but never climb out of a popup into
+            // the combo box that owns it: its option list must scroll normally.
+            while(field && !qobject_cast<QComboBox *>(field) && !qobject_cast<QAbstractSpinBox *>(field)) {
+                if(field->isWindow()) return false;
+                field=field->parentWidget();
+            }
+            if(!field) return false;
+            auto *wheel=static_cast<QWheelEvent *>(event);
+            if(!field->isWindow()) for(auto *parent=field->parentWidget();parent;parent=parent->parentWidget()) {
+                if(auto *scroll=qobject_cast<QAbstractScrollArea *>(parent)) {
+                    auto *viewport=scroll->viewport();
+                    QWheelEvent forwarded(viewport->mapFromGlobal(wheel->globalPosition()),wheel->globalPosition(),
+                        wheel->pixelDelta(),wheel->angleDelta(),wheel->buttons(),wheel->modifiers(),wheel->phase(),wheel->inverted(),wheel->source(),wheel->pointingDevice());
+                    QApplication::sendEvent(viewport,&forwarded);
+                    break;
+                }
+                if(parent->isWindow()) break;
+            }
+            // Consume the original even with no scroll area or at its edge.
+            // Focus is deliberately irrelevant: a just-edited value is safe too.
+            wheel->accept();
+            return true;
+        }
         return false;
     }
 };
@@ -210,7 +243,7 @@ QString DialogUi::styleSheet()
         QDialog[kuraDialog="true"] { background: @card; border: none; }
         QFrame#appMessageCard, QFrame#appDialogCard { background: @card; border: 1px solid @border; border-radius: 22px; }
         QWidget#appDialogBody, QWidget#appDialogHeader, QScrollArea#appDialogScroll, QScrollArea#appDialogScroll > QWidget > QWidget { background: transparent; }
-        QLabel#appDialogTitle { font-size: 21px; font-weight: 500; color: @ink; }
+        QLabel#appDialogTitle { font-size: 22px; font-weight: 500; color: @ink; }
         QToolButton#appDialogCloseButton { background: transparent; border: none; border-radius: 8px; padding: 0; font-size: 24px; color: @muted; }
         QToolButton#appDialogCloseButton:hover, QToolButton#appDialogCloseButton:focus { background: @inset; color: @ink; }
         QDialog[kuraDialog="true"] QLineEdit, QDialog[kuraDialog="true"] QAbstractSpinBox, QDialog[kuraDialog="true"] QComboBox { min-height: 28px; border-radius: 10px; padding: 8px 12px; }
@@ -238,7 +271,7 @@ QString DialogUi::styleSheet()
         QLabel[importTitle="true"] { font-size: 20px; font-weight: 500; }
         QLabel#importUploadMark, QLabel#importSuccessMark { color: @accent; font-size: 36px; padding: 4px; }
         QLabel#importFileNameLabel, QLabel#importFooterSummary { font-weight: 500; }
-        QLabel#importFooterHint { font-size: 11px; }
+        QLabel#importFooterHint { font-size: 12px; }
         QPushButton[importQuiet="true"] { background: transparent; border: 1px solid transparent; color: @secondary; padding: 5px 9px; min-height: 22px; border-radius: 10px; }
         QPushButton[importQuiet="true"]:hover, QPushButton[importQuiet="true"]:focus { background: @inset; color: @ink; }
         QPushButton[importTab="true"]:checked { background: @inset; color: @ink; }

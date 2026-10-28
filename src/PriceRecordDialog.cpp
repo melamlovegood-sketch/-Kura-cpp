@@ -1,5 +1,7 @@
+#include "EmptyAmountSpinBox.h"
 #include "ModernSelectors.h"
 #include "PriceRecordDialog.h"
+#include "ScreenshotDropTarget.h"
 #include "UnifiedWishlistRepository.h"
 #include "ProductDetailsDialog.h"
 #include "CategoryCatalog.h"
@@ -33,6 +35,8 @@ PriceRecordDialog::PriceRecordDialog(DatabaseManager &database,const PriceTrack 
 {
     setObjectName("priceRecordDialog"); setWindowTitle(wishId?QStringLiteral("记录商品价格"):track?QStringLiteral("追加价格记录"):QStringLiteral("记录价格"));
     setAcceptDrops(true); resize(590,670); setMinimumSize(450,400);
+    new ScreenshotDropTarget(this,[this] { return !m_service.busy() && !m_saved; },
+        [this](const QString &path) { return setScreenshot(path); },[this](const QImage &image) { return useImage(image); });
     auto *layout=new QVBoxLayout(this); layout->setContentsMargins(24,20,24,20); layout->setSpacing(12);
     auto *content=new QWidget; content->setProperty("page",true);
     auto *body=new QVBoxLayout(content); body->setContentsMargins(0,0,8,0); body->setSpacing(12);
@@ -54,10 +58,10 @@ PriceRecordDialog::PriceRecordDialog(DatabaseManager &database,const PriceTrack 
     m_name=new QLineEdit(m_trackName,m_form); m_name->setObjectName("priceNameEdit"); m_name->setMaxLength(100); m_name->setReadOnly(track);
     m_category=new ModernComboBox(m_form); m_category->setObjectName("priceCategoryComboBox"); for (const auto &key:CategoryCatalog::keys()) m_category->addItem(CategoryCatalog::label(key),key);
     m_category->setCurrentIndex(m_category->findData(track?track->category:QStringLiteral("online_shopping"))); m_category->setEnabled(!track);
-    m_amount=new QDoubleSpinBox(m_form); m_amount->setObjectName("priceAmountSpinBox"); m_amount->setRange(0,99999999.99); m_amount->setDecimals(2); m_amount->setSuffix(QStringLiteral(" 元")); m_amount->setSpecialValueText(QStringLiteral("请填写价格"));
+    m_amount=new EmptyAmountSpinBox(m_form,QStringLiteral("请填写价格（元）")); m_amount->setObjectName("priceAmountSpinBox"); m_amount->setRange(0,99999999.99); m_amount->setDecimals(2);
     m_source=new QLineEdit(QStringLiteral("手动记录"),m_form); m_source->setObjectName("priceSourceEdit"); m_source->setMaxLength(80); m_source->setPlaceholderText(QStringLiteral("如：淘宝 · M 码 · 券后价"));
     m_time=new QDateTimeEdit(QDateTime::currentDateTime(),m_form); m_time->setObjectName("priceObservedTimeEdit"); m_time->setDisplayFormat("yyyy-MM-dd HH:mm:ss"); m_time->setCalendarPopup(true); m_time->setDateTimeRange(QDateTime(QDate(1,1,1),QTime(0,0)),QDateTime::currentDateTime().addSecs(60));
-    form->addRow(QStringLiteral("商品"),m_name); form->addRow(QStringLiteral("实际看到的价格"),m_amount); form->addRow(QStringLiteral("平台／来源与条件"),m_source); body->addWidget(m_form);
+    form->addRow(QStringLiteral("商品"),m_name); form->addRow(QStringLiteral("实际看到的价格（元）"),m_amount); form->addRow(QStringLiteral("平台／来源与条件"),m_source); body->addWidget(m_form);
     auto *more=new QPushButton(QStringLiteral("更多信息"),content); more->setObjectName("priceMoreOptionsButton"); more->setCheckable(true); more->setProperty("link",true); body->addWidget(more,0,Qt::AlignLeft);
     m_options=new QWidget(content); m_options->setObjectName("priceMoreOptions"); auto *options=new QVBoxLayout(m_options); options->setContentsMargins(0,0,0,0);
     auto *extra=new QFormLayout; extra->addRow(QStringLiteral("品类"),m_category); extra->addRow(QStringLiteral("记录时间"),m_time); options->addLayout(extra); body->addWidget(m_options); m_options->hide();
@@ -165,15 +169,3 @@ void PriceRecordDialog::save()
     m_saved=true; emit priceSaved(id); accept();
 }
 void PriceRecordDialog::reject() { m_service.cancel(); QDialog::reject(); }
-void PriceRecordDialog::dragEnterEvent(QDragEnterEvent *event)
-{
-    const auto *mime=event->mimeData();
-    if (!m_service.busy() && (mime->hasImage() || (mime->hasUrls() && mime->urls().size()==1 && mime->urls().first().isLocalFile()))) event->acceptProposedAction();
-}
-void PriceRecordDialog::dropEvent(QDropEvent *event)
-{
-    const auto *mime=event->mimeData(); bool ok=false;
-    if (mime->hasUrls() && mime->urls().size()==1 && mime->urls().first().isLocalFile()) ok=setScreenshot(mime->urls().first().toLocalFile());
-    else if (mime->hasImage()) ok=useImage(qvariant_cast<QImage>(mime->imageData()));
-    if (ok) event->acceptProposedAction();
-}

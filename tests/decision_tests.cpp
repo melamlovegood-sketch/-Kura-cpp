@@ -6,9 +6,11 @@
 #include "CategoryCatalog.h"
 #include "DatabaseBackupService.h"
 #include "DecisionDialog.h"
+#include <QToolButton>
 #include "ExecutionWidget.h"
 #include "ProductRepository.h"
 #include "PriceRepository.h"
+#include "PriceRecordDialog.h"
 #include "AppTheme.h"
 #include <QDateEdit>
 #include <QSpinBox>
@@ -22,6 +24,9 @@
 #include <QComboBox>
 #include <QDir>
 #include <QDoubleSpinBox>
+#include <QDragEnterEvent>
+#include <QDragMoveEvent>
+#include <QDropEvent>
 #include <QFile>
 #include <QImage>
 #include <QJsonArray>
@@ -29,6 +34,7 @@
 #include <QJsonObject>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMimeData>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QRegularExpression>
@@ -93,7 +99,9 @@ static WishItem wish(const QString &name,qint64 cents=10000)
 static void choose(DecisionDialog *dialog,const char *button)
 {
     if (dialog->property("decisionStage").toInt()==1) dialog->findChild<QPushButton *>("decisionContinueButton")->click();
-    dialog->findChild<QPushButton *>(button)->click(); dialog->findChild<QPushButton *>("decisionCommitButton")->click();
+    dialog->findChild<QPushButton *>(button)->click();
+    if (QString::fromLatin1(button)=="decisionWishButton") dialog->findChild<QPushButton *>("decisionWishPriority2Button")->click();
+    dialog->findChild<QPushButton *>("decisionCommitButton")->click();
 }
 class DecisionTests:public QObject {
     Q_OBJECT
@@ -103,12 +111,61 @@ private slots:
     void backupRoundTripIncludesNewData();
     void legacyBackupUpgradesWithoutChangingSource();
     void encryptedSettingsAndStrictParsing();
+    void productResponseCompatibility();
+    void productResponseFailuresPreserveDraft();
+    void structuredRequestAndDialogRecovery();
     void networkImageErrorsAndCancellation();
     void threeChoicesThroughMainWindow();
     void failuresAndCancelDoNotWrite();
     void progressiveChoicesAndBack();
     void sharedEntriesAndResearchHandoff();
+    void sharedEntriesAndResearchHandoff_data();
+    void screenshotDropTargets_data();
+    void screenshotDropTargets();
 };
+
+void DecisionTests::screenshotDropTargets_data()
+{
+    QTest::addColumn<bool>("priceDialog");
+    QTest::addColumn<QString>("targetName");
+    QTest::addColumn<bool>("bottom");
+    QTest::newRow("purchase-placeholder") << false << QString("decisionInput") << false;
+    QTest::newRow("purchase-input-bottom") << false << QString("decisionInput") << true;
+    QTest::newRow("purchase-image-button") << false << QString("decisionImageButton") << false;
+    QTest::newRow("purchase-status") << false << QString("decisionStatusLabel") << false;
+    QTest::newRow("price-image-button") << true << QString("priceImageButton") << false;
+    QTest::newRow("price-preview") << true << QString("priceImagePreview") << false;
+}
+
+void DecisionTests::screenshotDropTargets()
+{
+    QFETCH(bool,priceDialog); QFETCH(QString,targetName); QFETCH(bool,bottom);
+    QTemporaryDir directory; DatabaseManager database(directory.filePath("drop.sqlite")); QVERIFY(database.initialize());
+    const auto path=directory.filePath("product.jpg"); QFile file(path); QVERIFY(file.open(QIODevice::WriteOnly)); file.write(imageBytes()); file.close();
+    DecisionDialog purchase(database,AISettings{}); PriceRecordDialog price(database);
+    QDialog &dialog=priceDialog?static_cast<QDialog &>(price):static_cast<QDialog &>(purchase);
+    if (targetName=="priceImagePreview") QVERIFY(price.setScreenshot(path));
+    dialog.show(); settle();
+    auto *target=dialog.findChild<QWidget *>(targetName); QVERIFY(target);
+    if (auto *editor=qobject_cast<QPlainTextEdit *>(target)) { editor->setPlainText(QStringLiteral("保留已输入的商品描述")); target=editor->viewport(); }
+    const QPoint position=bottom?QPoint(target->width()/2,target->height()-8):QPoint(12,12);
+    auto *leaf=dialog.childAt(target->mapTo(&dialog,position)); QVERIFY(leaf);
+    const auto local=leaf->mapFrom(target,position);
+    // File drags from Windows/WeChat can also offer a text representation.
+    QMimeData mime; mime.setUrls({QUrl::fromLocalFile(path)}); mime.setText(QUrl::fromLocalFile(path).toString());
+    QDragEnterEvent enter(local,Qt::CopyAction,&mime,Qt::LeftButton,Qt::NoModifier); QApplication::sendEvent(leaf,&enter);
+    QVERIFY(enter.isAccepted());
+    // QWidgetWindow carries the accepted action into native drag-move events.
+    QDragMoveEvent move(local,Qt::CopyAction,&mime,Qt::LeftButton,Qt::NoModifier); move.setDropAction(enter.dropAction()); move.setAccepted(enter.isAccepted());
+    QApplication::sendEvent(leaf,&move); QVERIFY(move.isAccepted());
+    QDropEvent drop(local,Qt::CopyAction,&mime,Qt::LeftButton,Qt::NoModifier); QApplication::sendEvent(leaf,&drop); QVERIFY(drop.isAccepted()); settle();
+    QVERIFY(!dialog.findChild<QPushButton *>(priceDialog?"priceRemoveImageButton":"decisionRemoveImageButton")->isHidden());
+    if (!priceDialog) {
+        QCOMPARE(purchase.findChild<QPlainTextEdit *>("decisionInput")->toPlainText(),targetName=="decisionInput"?QStringLiteral("保留已输入的商品描述"):QString());
+        QVERIFY(purchase.findChild<QPushButton *>("decisionAnalyzeButton")->isEnabled());
+    }
+    QCOMPARE(count(database,"transactions"),0);
+}
 
 void DecisionTests::splitBudgetsAndCategoryCorrection()
 {
@@ -189,7 +246,7 @@ void DecisionTests::legacyBackupUpgradesWithoutChangingSource()
     { DatabaseManager old(oldPath); QVERIFY(old.initialize()); TransactionRepository expenses(old); Transaction record(0,QStringLiteral("旧午饭"),2800,QStringLiteral("餐饮"),QDate::currentDate()); QVERIFY(expenses.add(record));
       BudgetRepository budgets(old); QVERIFY(budgets.save(MonthlyBudget(QDate::currentDate(),10000)));
       QSqlQuery query(old.database());
-      for (const auto &sql : {"DROP TABLE bill_import_keys","DROP TABLE transaction_reviews","DROP TABLE monthly_stories","DROP TABLE price_records","DROP TABLE price_tracks","DROP TABLE review_tasks","DROP TABLE execution_sessions","DROP TABLE brands","DROP TABLE shopping_rules","DROP TABLE savings_records","DROP TABLE wish_pools","ALTER TABLE transactions DROP COLUMN detail_category","ALTER TABLE transactions DROP COLUMN source_image","ALTER TABLE wishlist DROP COLUMN detail_category","ALTER TABLE wishlist DROP COLUMN source_image","ALTER TABLE monthly_budgets DROP COLUMN basic_limit_cents","ALTER TABLE monthly_budgets DROP COLUMN discretionary_limit_cents"}) QVERIFY(query.exec(sql)); }
+      for (const auto &sql : {"DROP TABLE execution_wishes","DROP TABLE achievement_marks","DROP TABLE bill_import_keys","DROP TABLE transaction_reviews","DROP TABLE monthly_stories","DROP TABLE price_records","DROP TABLE price_tracks","DROP TABLE review_tasks","DROP TABLE execution_sessions","DROP TABLE brands","DROP TABLE shopping_rules","DROP TABLE savings_records","DROP TABLE wish_pools","ALTER TABLE transactions DROP COLUMN detail_category","ALTER TABLE transactions DROP COLUMN source_image","ALTER TABLE wishlist DROP COLUMN detail_category","ALTER TABLE wishlist DROP COLUMN source_image","ALTER TABLE monthly_budgets DROP COLUMN basic_limit_cents","ALTER TABLE monthly_budgets DROP COLUMN discretionary_limit_cents"}) QVERIFY(query.exec(sql)); }
     QFile oldFile(oldPath); QVERIFY(oldFile.open(QIODevice::ReadOnly)); const auto before=oldFile.readAll(); oldFile.close();
     DatabaseManager current(directory.filePath("current.sqlite")); QVERIFY(current.initialize()); auto item=wish(QStringLiteral("当前目标")); WishlistRepository wishes(current); QVERIFY(wishes.add(item));
     WishPoolRepository pools(current); QVERIFY(pools.setGoal(item.id)); QVERIFY(pools.addSaving(500,QStringLiteral("旧状态"),"old-state"));
@@ -227,6 +284,77 @@ void DecisionTests::encryptedSettingsAndStrictParsing()
     settings.baseUrl="http://example.com/v1"; QVERIFY(!settings.validationError().isEmpty()); settings.baseUrl="https://example.com/v1"; settings.apiKey="bad\nkey"; QVERIFY(!settings.validationError().isEmpty());
 }
 
+static QByteArray responseText(const QString &text,const QString &reason="stop")
+{
+    return QJsonDocument(QJsonObject{{"choices",QJsonArray{QJsonObject{{"finish_reason",reason},{"message",QJsonObject{{"content",text}}}}}}}).toJson(QJsonDocument::Compact);
+}
+
+void DecisionTests::productResponseCompatibility()
+{
+    QJsonObject object{{"name",QStringLiteral("耳机 {通勤} \"轻便\"")},{"amount",QStringLiteral("￥ 299.90 元")},{"category",QStringLiteral("网购")},{"note",QJsonValue::Null},{"purpose_category",QJsonValue::Null},{"budget_scope",QJsonValue::Null}};
+    const auto json=QString::fromUtf8(QJsonDocument(object).toJson(QJsonDocument::Compact));
+    ParsedProduct product; QString error;
+    for (const auto &text:QStringList{json,"```json\n"+json+"\n```",QStringLiteral("识别结果如下：\n```json\n")+json+QStringLiteral("\n```\n请核对价格。")}) {
+        QVERIFY2(AIService::decodeProduct(responseText(text),product,error),qPrintable(error));
+        QCOMPARE(product.name,object["name"].toString()); QCOMPARE(product.amountCents,29990); QCOMPARE(product.category,QString("online_shopping"));
+        QVERIFY(product.note.isEmpty()); QVERIFY(product.purposeCategory.isEmpty()); QVERIFY(product.budgetScope.isEmpty());
+    }
+    object["purpose_category"]=QStringLiteral("服饰鞋包"); object["budget_scope"]=QStringLiteral("必要生活"); object["amount"]=QJsonValue::Null;
+    QVERIFY(AIService::decodeProduct(envelope(object),product,error)); QCOMPARE(product.amountCents,0); QCOMPARE(product.purposeCategory,QString("clothing")); QCOMPARE(product.budgetScope,QString("basic"));
+    object["purpose_category"]=""; object["budget_scope"]=""; QVERIFY(AIService::decodeProduct(envelope(object),product,error));
+    for (const auto &amount:QStringList{QStringLiteral("¥0.01"),QStringLiteral("人民币0.01元"),"CNY 0.01","RMB 0.01"}) { object["amount"]=amount; QVERIFY(AIService::decodeProduct(envelope(object),product,error)); QCOMPARE(product.amountCents,1); }
+    auto parts=QJsonDocument::fromJson(envelope(object)).object(); auto choices=parts["choices"].toArray(); auto choice=choices[0].toObject(); const auto text=choice["message"].toObject()["content"].toString();
+    choice["message"]=QJsonObject{{"content",QJsonArray{QJsonObject{{"type","text"},{"text",text.left(20)}},QJsonObject{{"type","text"},{"text",text.mid(20)}}}}}; choices[0]=choice; parts["choices"]=choices;
+    QVERIFY(AIService::decodeProduct(QJsonDocument(parts).toJson(),product,error));
+    ParsedPrice price; QJsonObject priceObject{{"name","fixture"},{"category",QStringLiteral("网购")},{"amount",QStringLiteral("￥228.00")},{"note",QJsonValue::Null},{"source",QJsonValue::Null}};
+    QVERIFY(AIService::decodePrice(responseText(QStringLiteral("结果：")+QString::fromUtf8(QJsonDocument(priceObject).toJson())),price,error)); QCOMPARE(price.amountCents,22800);
+    QJsonObject fields; QString note;
+    QVERIFY(AIService::decodeDetails(responseText(QStringLiteral("识别结果：{\"fields\":{\"brand\":\"fixture\"},\"note\":null}")),fields,note,error)); QCOMPARE(fields["brand"].toString(),QString("fixture"));
+}
+
+void DecisionTests::productResponseFailuresPreserveDraft()
+{
+    const QJsonObject good{{"name","fixture"},{"category","online_shopping"},{"amount","12.34"},{"note",""}};
+    ParsedProduct product; product.name="keep"; product.amountCents=765;
+    QString error;
+    auto unchanged=[&] { QCOMPARE(product.name,QString("keep")); QCOMPARE(product.amountCents,765); QVERIFY(!error.isEmpty()); };
+    for (const auto &amount:QJsonArray{true,0,-1,12.345,"$12.34","USD 12.34","12-34",QStringLiteral("约12元"),"NaN","1e4","100000000","0.001"}) {
+        auto object=good; object["amount"]=amount; QVERIFY(!AIService::decodeProduct(envelope(object),product,error)); QVERIFY(error.contains(QStringLiteral("金额"))); unchanged();
+    }
+    for (const auto &key:QStringList{"category","purpose_category","budget_scope","note"}) {
+        auto object=good; object[key]=key=="note"?QJsonValue(123):QJsonValue("invented"); QVERIFY(!AIService::decodeProduct(envelope(object),product,error)); unchanged();
+    }
+    auto missing=good; missing["name"]=""; QVERIFY(!AIService::decodeProduct(envelope(missing),product,error)); QVERIFY(error.contains(QStringLiteral("没有识别出商品"))); unchanged();
+    const auto json=QString::fromUtf8(QJsonDocument(good).toJson(QJsonDocument::Compact));
+    for (const auto &text:QStringList{json+json,"["+json+"]",json.left(json.size()-1),"{broken "+json,"{} "+json}) { QVERIFY(!AIService::decodeProduct(responseText(text),product,error)); unchanged(); }
+    QVERIFY(!AIService::decodeProduct(responseText(json,"length"),product,error)); QVERIFY(error.contains(QStringLiteral("截断"))); unchanged();
+    QVERIFY(!AIService::decodeProduct(responseText(json,"content_filter"),product,error)); QVERIFY(error.contains(QStringLiteral("未能处理"))); unchanged();
+    const auto provider=QJsonDocument(QJsonObject{{"error",QJsonObject{{"code","invalid_api_key"},{"message","fixture-sensitive-value"}}}}).toJson();
+    QVERIFY(!AIService::decodeProduct(provider,product,error)); QVERIFY(error.contains("API Key")); QVERIFY(!error.contains("fixture-sensitive-value")); unchanged();
+    QVERIFY(!AIService::decodeProduct("not-json",product,error)); QVERIFY(error.contains(QStringLiteral("服务返回格式异常"))); unchanged();
+}
+
+void DecisionTests::structuredRequestAndDialogRecovery()
+{
+    FakeAI server; AIService service; auto settings=server.settings(); settings.model="qwen3-vl-plus";
+    QSignalSpy parsed(&service,&AIService::parsed),failed(&service,&AIService::failed),textReady(&service,&AIService::textReady);
+    QVERIFY(service.analyze(settings,"fixture",{})); QTRY_COMPARE_WITH_TIMEOUT(parsed.count(),1,5000);
+    auto body=QJsonDocument::fromJson(server.requests.last().split('\n').last()).object();
+    QCOMPARE(body["response_format"].toObject()["type"].toString(),QString("json_object")); QVERIFY(body["enable_thinking"].isBool()); QVERIFY(!body["enable_thinking"].toBool()); QVERIFY(body["max_tokens"].toInt()>=1200);
+    server.response=responseText("fixture answer"); QVERIFY(service.advise(settings,"fixture","question")); QTRY_COMPARE_WITH_TIMEOUT(textReady.count(),1,5000);
+    body=QJsonDocument::fromJson(server.requests.last().split('\n').last()).object(); QVERIFY(!body.contains("response_format"));
+    settings.model="custom-vision"; server.response=envelope(QJsonObject{{"name","fixture"},{"category","other"},{"amount",QJsonValue::Null}});
+    QVERIFY(service.analyze(settings,"fixture",{})); QTRY_COMPARE_WITH_TIMEOUT(parsed.count(),2,5000); body=QJsonDocument::fromJson(server.requests.last().split('\n').last()).object(); QVERIFY(!body.contains("response_format"));
+    settings.useTrial=true; server.response=QJsonDocument(QJsonObject{{"error",QJsonObject{{"code","insufficient_quota"},{"message","fixture-sensitive-value"}}}}).toJson();
+    QVERIFY(service.analyze(settings,"fixture",{})); QTRY_COMPARE_WITH_TIMEOUT(failed.count(),1,5000); QVERIFY(failed[0][0].toString().contains(QStringLiteral("Kura AI 试用额度"))); QVERIFY(!failed[0][0].toString().contains("fixture-sensitive-value"));
+    QTemporaryDir dir; DatabaseManager db(dir.filePath("recovery.sqlite")); QVERIFY(db.initialize());
+    DecisionDialog dialog(db,server.settings()); dialog.show(); auto *input=dialog.findChild<QPlainTextEdit *>("decisionInput"); QVERIFY(input); input->setPlainText(QStringLiteral("想买通勤耳机"));
+    auto *button=dialog.findChild<QPushButton *>("decisionAnalyzeButton"); button->click(); QTRY_VERIFY_WITH_TIMEOUT(button->isEnabled(),5000);
+    QCOMPARE(dialog.property("decisionStage").toInt(),0); QCOMPARE(input->toPlainText(),QStringLiteral("想买通勤耳机")); QCOMPARE(count(db,"transactions"),0);
+    server.response=responseText(QStringLiteral("识别结果如下：\n{\"name\":\"通勤耳机\",\"amount\":\"￥299.00\",\"category\":\"网购\",\"purpose_category\":null,\"budget_scope\":null,\"note\":null}"));
+    button->click(); QTRY_COMPARE_WITH_TIMEOUT(dialog.property("decisionStage").toInt(),1,5000); QCOMPARE(dialog.findChild<QDoubleSpinBox *>("decisionAmountSpinBox")->value(),299.0); QCOMPARE(count(db,"transactions"),0);
+}
+
 void DecisionTests::networkImageErrorsAndCancellation()
 {
     FakeAI server; QVERIFY(server.server.isListening()); AIService service; QSignalSpy parsed(&service,&AIService::parsed),failed(&service,&AIService::failed);
@@ -258,7 +386,7 @@ void DecisionTests::threeChoicesThroughMainWindow()
     dialog->findChild<QSpinBox *>("decisionCoolingDaysSpinBox")->setValue(7); choose(dialog,"decisionWishButton"); settle();
     QCOMPARE(window.currentPage(),MainWindow::Page::Wishlist); QCOMPARE(count(database,"transactions"),0); QCOMPARE(count(database,"wishlist"),1); QCOMPARE(count(database,"savings_records"),0);
     QList<WishItem> items; WishlistRepository wishes(database); QVERIFY(wishes.findAll(items)); QCOMPARE(items[0].estimatedCents,12999); QCOMPARE(items[0].coolingDays,7); QVERIFY(!items[0].sourceImage.isEmpty());
-    window.findChild<QTableWidget *>("wishlistTable")->selectRow(0); window.findChild<QAction *>("setWishPoolGoalAction")->trigger(); settle(); QCOMPARE(window.currentPage(),MainWindow::Page::Home);
+    window.findChild<QTableWidget *>("wishlistTable")->cellWidget(0,0)->findChild<QToolButton *>("wishGoalButton")->click(); settle(); QCOMPARE(window.currentPage(),MainWindow::Page::Wishlist); window.showPage(MainWindow::Page::Home);
     window.findChild<QPushButton *>("homeDecisionButton")->click(); settle(); dialog=window.findChild<DecisionDialog *>(); QVERIFY(dialog);
     dialog->findChild<QPlainTextEdit *>("decisionInput")->setPlainText(QStringLiteral("忍住奶茶")); dialog->findChild<QPushButton *>("decisionManualButton")->click();
     dialog->findChild<QDoubleSpinBox *>("decisionAmountSpinBox")->setValue(15); choose(dialog,"decisionHoldButton"); choose(dialog,"decisionHoldButton"); settle();
@@ -268,12 +396,15 @@ void DecisionTests::threeChoicesThroughMainWindow()
     dialog->findChild<QDoubleSpinBox *>("decisionAmountSpinBox")->setValue(35);
     auto *category=dialog->findChild<QComboBox *>("decisionCategoryComboBox"); category->setCurrentIndex(category->findData("daily_supplies"));
     dialog->findChild<QPushButton *>("decisionBackButton")->click(); QVERIFY(dialog->setScreenshot(imagePath)); dialog->findChild<QPushButton *>("decisionManualButton")->click(); dialog->findChild<QDoubleSpinBox *>("decisionAmountSpinBox")->setValue(35); category->setCurrentIndex(category->findData("daily_supplies"));
-    choose(dialog,"decisionBuyButton"); settle(); QCOMPARE(count(database,"transactions"),1); QCOMPARE(count(database,"wishlist"),1);
-    QList<Transaction> expenses; TransactionRepository records(database); QVERIFY(records.findAll(expenses)); QCOMPARE(expenses[0].detailCategory(),QStringLiteral("daily_supplies")); QVERIFY(!expenses[0].sourceImage().isEmpty());
-    AddTransactionDialog editor(expenses[0]); QCOMPARE(editor.transaction().sourceImage(),expenses[0].sourceImage()); QCOMPARE(editor.transaction().detailCategory(),expenses[0].detailCategory());
+    dialog->findChild<QPushButton *>("decisionContinueButton")->click();
+    QCOMPARE(dialog->findChild<QPushButton *>("decisionBuyButton")->text(),QStringLiteral("现在就买"));
+    dialog->findChild<QPushButton *>("decisionBuyButton")->click(); settle();
+    QCOMPARE(window.currentPage(),MainWindow::Page::Execution); QVERIFY(!window.findChild<DecisionDialog *>());
+    QCOMPARE(count(database,"transactions"),0); QCOMPARE(count(database,"review_tasks"),0); QCOMPARE(count(database,"wishlist"),1);
+    QCOMPARE(window.findChild<QComboBox *>("executionCategoryComboBox")->currentData().toString(),QStringLiteral("daily_supplies"));
     QVERIFY(pool.load(state)); QCOMPARE(state.savedCents,1500);
     window.showPage(MainWindow::Page::Billing); window.findChild<QDoubleSpinBox *>("basicBudgetAmountSpinBox")->setValue(100); window.findChild<QDoubleSpinBox *>("budgetAmountSpinBox")->setValue(200); window.findChild<QPushButton *>("saveBudgetButton")->click(); window.showPage(MainWindow::Page::Home); settle();
-    QVERIFY(window.findChild<QLabel *>("homeBasicBudgetLabel")->text().contains(QStringLiteral("¥65.00")));
+    QVERIFY(window.findChild<QLabel *>("homeBasicBudgetLabel")->text().contains(QStringLiteral("¥100.00")));
     if (!preview.isEmpty()) QVERIFY(window.grab().save(preview+"/decision-home.png"));
     window.showPage(MainWindow::Page::Settings); settle(); if (!preview.isEmpty()) QVERIFY(window.grab().save(preview+"/decision-settings.png"));
 }
@@ -285,24 +416,25 @@ void DecisionTests::failuresAndCancelDoNotWrite()
     dialog.findChild<QPlainTextEdit *>("decisionInput")->setPlainText(QStringLiteral("一杯水")); dialog.findChild<QPushButton *>("decisionAnalyzeButton")->click();
     QVERIFY(dialog.findChild<QLabel *>("decisionErrorLabel")->text().contains("API Key")); QCOMPARE(count(database,"transactions"),0);
     dialog.findChild<QPushButton *>("decisionManualButton")->click(); dialog.findChild<QDoubleSpinBox *>("decisionAmountSpinBox")->setValue(10);
-    QSqlQuery query(database.database()); QVERIFY(query.exec("CREATE TRIGGER fail_expense BEFORE INSERT ON transactions BEGIN SELECT RAISE(FAIL,'test'); END"));
-    choose(&dialog,"decisionBuyButton"); QVERIFY(dialog.isVisible()); QCOMPARE(dialog.findChild<QDoubleSpinBox *>("decisionAmountSpinBox")->value(),10); QCOMPARE(count(database,"transactions"),0);
-    QVERIFY(query.exec("DROP TRIGGER fail_expense")); choose(&dialog,"decisionBuyButton"); QCOMPARE(count(database,"transactions"),1);
+    QSqlQuery query(database.database()); QVERIFY(query.exec("CREATE TRIGGER fail_wish BEFORE INSERT ON wishlist BEGIN SELECT RAISE(FAIL,'test'); END"));
+    choose(&dialog,"decisionWishButton"); QVERIFY(dialog.isVisible()); QCOMPARE(dialog.findChild<QDoubleSpinBox *>("decisionAmountSpinBox")->value(),10); QCOMPARE(count(database,"wishlist"),0);
+    QVERIFY(query.exec("DROP TRIGGER fail_wish")); choose(&dialog,"decisionWishButton"); QCOMPARE(count(database,"wishlist"),1);
     DecisionDialog cancelled(database,missing); cancelled.show(); cancelled.findChild<QPushButton *>("decisionManualButton")->click(); cancelled.reject();
-    QCOMPARE(count(database,"transactions"),1); QCOMPARE(count(database,"wishlist"),0); QCOMPARE(count(database,"savings_records"),0);
+    QCOMPARE(count(database,"transactions"),0); QCOMPARE(count(database,"wishlist"),1); QCOMPARE(count(database,"savings_records"),0);
 }
 void DecisionTests::progressiveChoicesAndBack()
 {
     QTemporaryDir dir; DatabaseManager db(dir.filePath("stages.sqlite")); QVERIFY(db.initialize());
     DecisionDialog dialog(db,AISettings{}); AppTheme::apply(&dialog,"warm"); dialog.show(); settle();
     auto button=[&](const char *name) { return dialog.findChild<QPushButton *>(name); };
-    auto *date=dialog.findChild<QDateEdit *>("decisionDateEdit"); auto *days=dialog.findChild<QSpinBox *>("decisionCoolingDaysSpinBox");
+    QVERIFY(!dialog.findChild<QDateEdit *>("decisionDateEdit")); auto *days=dialog.findChild<QSpinBox *>("decisionCoolingDaysSpinBox");
+    QSignalSpy handoff(&dialog,&DecisionDialog::researchRequested);
     const QString preview=qEnvironmentVariable("KURA_PREVIEW_DIR");
     auto shot=[&](const QString &name) { settle(); if (!preview.isEmpty()) { QDir().mkpath(preview); QVERIFY(dialog.grab().save(preview+"/purchase-"+name+".png")); } };
-    QVERIFY(!button("decisionBuyButton")->isVisible()); QVERIFY(!date->isVisible()); QVERIFY(!days->isVisible()); shot("input");
+    QVERIFY(!button("decisionBuyButton")->isVisible()); QVERIFY(!days->isVisible()); shot("input");
     dialog.findChild<QPlainTextEdit *>("decisionInput")->setPlainText(QStringLiteral("耳机")); button("decisionManualButton")->click(); settle();
-    QVERIFY(!date->isVisible()); QVERIFY(!days->isVisible()); QVERIFY(!button("decisionBuyButton")->isVisible());
-    QVERIFY(!dialog.findChild<QComboBox *>("decisionBrandComboBox")->isVisible());
+    QVERIFY(!days->isVisible()); QVERIFY(!button("decisionBuyButton")->isVisible());
+    QVERIFY(!dialog.findChild<QComboBox *>("decisionBrandComboBox"));
     dialog.findChild<QDoubleSpinBox *>("decisionAmountSpinBox")->setValue(299); shot("confirm");
     button("decisionExtrasButton")->click(); dialog.findChild<QPlainTextEdit *>("decisionNoteEdit")->setPlainText(QStringLiteral("通勤时用"));
     button("decisionBackButton")->click(); QCOMPARE(dialog.property("decisionStage").toInt(),0);
@@ -310,22 +442,34 @@ void DecisionTests::progressiveChoicesAndBack()
     QCOMPARE(dialog.findChild<QDoubleSpinBox *>("decisionAmountSpinBox")->value(),299.0);
     QCOMPARE(dialog.findChild<QPlainTextEdit *>("decisionNoteEdit")->toPlainText(),QStringLiteral("通勤时用"));
     button("decisionContinueButton")->click(); QVERIFY(button("decisionBuyButton")->isVisible()); QVERIFY(!button("decisionCommitButton")->isVisible()); shot("choices");
-    button("decisionBuyButton")->click(); QVERIFY(date->isVisible()); QVERIFY(!days->isVisible());
-    date->setDate(QDate::currentDate().addDays(-2)); shot("buy");
-    button("decisionWishButton")->click(); QVERIFY(!date->isVisible()); QVERIFY(days->isVisible()); days->setValue(7); shot("wishlist");
-    button("decisionHoldButton")->click(); QVERIFY(!date->isVisible()); QVERIFY(!days->isVisible());
+    button("decisionBuyButton")->click(); QCOMPARE(handoff.count(),1); QVERIFY(!days->isVisible()); QVERIFY(!button("decisionCommitButton")->isVisible());
+    button("decisionWishButton")->click(); QVERIFY(days->isVisible()); days->setValue(7); shot("wishlist");
+    button("decisionHoldButton")->click(); QVERIFY(!days->isVisible());
     QCOMPARE(count(db,"transactions"),0); QCOMPARE(count(db,"wishlist"),0); QCOMPARE(count(db,"savings_records"),0);
     button("decisionBackButton")->click(); QCOMPARE(dialog.findChild<QPlainTextEdit *>("decisionNoteEdit")->toPlainText(),QStringLiteral("通勤时用"));
     dialog.findChild<QLineEdit *>("decisionNameEdit")->setText(QStringLiteral("通勤耳机"));
     button("decisionContinueButton")->click(); QVERIFY(dialog.findChild<QLabel *>("decisionSummaryLabel")->text().contains(QStringLiteral("通勤耳机")));
     button("decisionBuyButton")->click();
     for (const auto &theme:{"warm","cool","dark"}) { AppTheme::apply(&dialog,theme); dialog.resize(450,500); shot(QStringLiteral("%1-small").arg(theme)); QCOMPARE(dialog.findChild<QScrollArea *>()->horizontalScrollBar()->maximum(),0); }
-    button("decisionCommitButton")->click(); button("decisionCommitButton")->click(); QCOMPARE(count(db,"transactions"),1); QCOMPARE(count(db,"review_tasks"),2);
-    QList<Transaction> records; TransactionRepository repo(db); QVERIFY(repo.findAll(records)); QCOMPARE(records[0].date(),QDate::currentDate().addDays(-2)); QCOMPARE(records[0].note(),QStringLiteral("通勤时用"));
+    button("decisionCommitButton")->click(); QCOMPARE(count(db,"transactions"),0); QCOMPARE(count(db,"review_tasks"),0); QCOMPARE(count(db,"savings_records"),0);
+    QCOMPARE(handoff.count(),2); const auto product=qvariant_cast<ParsedProduct>(handoff.last()[0]);
+    QCOMPARE(product.name,QStringLiteral("通勤耳机")); QCOMPARE(product.note,QStringLiteral("通勤时用"));
+    dialog.setResearchAvailable(false); QVERIFY(!button("decisionBuyButton")->isEnabled());
+    button("decisionBackButton")->click(); button("decisionContinueButton")->click(); QVERIFY(!button("decisionBuyButton")->isEnabled());
+    button("decisionBuyButton")->click(); QCOMPARE(handoff.count(),2);
+    dialog.setResearchAvailable(true); button("decisionBuyButton")->click(); QCOMPARE(handoff.count(),3);
+}
+
+void DecisionTests::sharedEntriesAndResearchHandoff_data()
+{
+    QTest::addColumn<QString>("entry");
+    QTest::newRow("research") << QStringLiteral("decisionResearchButton");
+    QTest::newRow("buy-now") << QStringLiteral("decisionBuyButton");
 }
 
 void DecisionTests::sharedEntriesAndResearchHandoff()
 {
+    QFETCH(QString,entry);
     QTemporaryDir dir; const auto path=dir.filePath("shared.sqlite"); DatabaseManager db(path); QVERIFY(db.initialize());
     MainWindow window(path); window.show(); settle();
     window.findChild<QPushButton *>("homeDecisionButton")->click(); settle();
@@ -336,7 +480,14 @@ void DecisionTests::sharedEntriesAndResearchHandoff()
     const auto imagePath=dir.filePath("item.png"); QImage image(180,100,QImage::Format_RGB32); image.fill(Qt::gray); QVERIFY(image.save(imagePath)); QVERIFY(dialog->setScreenshot(imagePath));
     dialog->findChild<QPlainTextEdit *>("decisionInput")->setPlainText(QStringLiteral("耳机")); dialog->findChild<QPushButton *>("decisionManualButton")->click();
     dialog->findChild<QDoubleSpinBox *>("decisionAmountSpinBox")->setValue(299); dialog->findChild<QPlainTextEdit *>("decisionNoteEdit")->setPlainText(QStringLiteral("通勤"));
-    dialog->findChild<QPushButton *>("decisionContinueButton")->click(); dialog->findChild<QPushButton *>("decisionResearchButton")->click(); settle();
+    dialog->findChild<QPushButton *>("decisionContinueButton")->click();
+    QSqlQuery unavailable(db.database()); QVERIFY(unavailable.exec("ALTER TABLE shopping_rules RENAME TO unavailable_rules"));
+    dialog->findChild<QPushButton *>(entry)->click(); settle();
+    QVERIFY(dialog->isVisible()); QVERIFY(dialog->findChild<QLabel *>("decisionErrorLabel")->isVisible());
+    QCOMPARE(dialog->findChild<QLineEdit *>("decisionNameEdit")->text(),QStringLiteral("耳机"));
+    QCOMPARE(count(db,"transactions"),0); QCOMPARE(count(db,"review_tasks"),0); QCOMPARE(count(db,"execution_sessions"),0);
+    QVERIFY(unavailable.exec("ALTER TABLE unavailable_rules RENAME TO shopping_rules"));
+    dialog->findChild<QPushButton *>(entry)->click(); settle();
     QVERIFY(!window.findChild<DecisionDialog *>()); QCOMPARE(window.currentPage(),MainWindow::Page::Execution);
     QCOMPARE(window.findChild<QLineEdit *>("executionNameEdit")->text(),QStringLiteral("耳机")); QCOMPARE(window.findChild<QDoubleSpinBox *>("executionEstimatedAmountSpinBox")->value(),299.0);
     QCOMPARE(window.findChild<QLineEdit *>("executionPurposeEdit")->text(),QStringLiteral("通勤"));
@@ -351,6 +502,9 @@ void DecisionTests::sharedEntriesAndResearchHandoff()
     auto *purchase=window.findChild<AddTransactionDialog *>(); QVERIFY(purchase); QCOMPARE(purchase->transaction().sourceImage(),originalImage); purchase->reject(); settle();
     window.showPage(MainWindow::Page::Home); window.findChild<QPushButton *>("homeDecisionButton")->click(); settle(); dialog=window.findChild<DecisionDialog *>(); QVERIFY(dialog);
     QVERIFY(!dialog->findChild<QPushButton *>("decisionResearchButton")->isEnabled());
+    dialog->findChild<QPushButton *>("decisionManualButton")->click(); dialog->findChild<QLineEdit *>("decisionNameEdit")->setText(QStringLiteral("不能覆盖"));
+    dialog->findChild<QPushButton *>("decisionContinueButton")->click(); QVERIFY(!dialog->findChild<QPushButton *>("decisionBuyButton")->isEnabled());
+    dialog->findChild<QPushButton *>("decisionBuyButton")->click(); QCOMPARE(count(db,"transactions"),0); QCOMPARE(count(db,"review_tasks"),0);
     QVERIFY(!execution->prepareDecision(ParsedProduct{QStringLiteral("不能覆盖"),"online_shopping",{},500})); QCOMPARE(execution->activeSessionId(),session); dialog->reject();
 }
 

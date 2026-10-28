@@ -3,10 +3,11 @@
 
 Transaction::Transaction(qint64 id, const QString &description, qint64 amountCents,
                          const QString &category, const QDate &date,
-                         const QTime &time, const QString &note, const QString &detailCategory, const QByteArray &sourceImage)
+                         const QTime &time, const QString &note, const QString &detailCategory, const QByteArray &sourceImage,
+                         const QString &purposeCategory, const QString &budgetScope)
     : m_id(id), m_description(description.trimmed()), m_amountCents(amountCents),
       m_category(category), m_date(date), m_time(time.isValid() ? QTime(time.hour(), time.minute(), time.second()) : QTime()),
-      m_note(note), m_detailCategory(detailCategory.isEmpty() ? CategoryCatalog::fromLegacy(category) : detailCategory), m_sourceImage(sourceImage)
+      m_note(note), m_detailCategory(detailCategory.isEmpty() ? CategoryCatalog::fromLegacy(category) : detailCategory), m_sourceImage(sourceImage), m_purposeCategory(purposeCategory), m_budgetScope(budgetScope)
 {
 }
 
@@ -21,8 +22,14 @@ QString Transaction::note() const { return m_note; }
 QString Transaction::detailCategory() const { return m_detailCategory; }
 QByteArray Transaction::sourceImage() const { return m_sourceImage; }
 
+QString Transaction::purposeCategory() const { return m_purposeCategory.isEmpty()?CategoryCatalog::purposeFromDetail(m_detailCategory):m_purposeCategory; }
+QString Transaction::budgetScope() const { return m_budgetScope.isEmpty()?(CategoryCatalog::isBasic(m_detailCategory)?QStringLiteral("basic"):QStringLiteral("discretionary")):m_budgetScope; }
+bool Transaction::isBasic() const { return budgetScope()=="basic"; }
+
 QString Transaction::validationError() const
 {
+    if (!CategoryCatalog::validPurpose(purposeCategory()) || (budgetScope()!="basic" && budgetScope()!="discretionary"))
+        return QStringLiteral("请选择有效的用途和预算归属。");
     if (m_id < 0)
         return QStringLiteral("消费记录编号无效。");
     if (m_description.isEmpty() || m_description.size() > 100)

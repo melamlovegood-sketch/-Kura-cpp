@@ -8,7 +8,7 @@ QString WishItem::inputError() const
     if (coolingDays < 1 || coolingDays > 30)
         return QStringLiteral("冷静期须为 1 至 30 天。");
     if (priority < 1 || priority > 3)
-        return QStringLiteral("请选择高、中或低优先级。");
+        return QStringLiteral("请点选现在有多需要这件商品。");
     if (reason.size() > 500)
         return QStringLiteral("购买理由最多 500 个字符。");
     return {};
@@ -47,7 +47,7 @@ bool WishItem::canPurchase(const QDateTime &now) const
 
 QString WishItem::priorityText() const
 {
-    return priority == 1 ? QStringLiteral("高") : priority == 3 ? QStringLiteral("低") : QStringLiteral("中");
+    return priority == 1 ? QStringLiteral("高优先") : priority == 3 ? QStringLiteral("低优先") : QStringLiteral("中优先");
 }
 
 QString WishItem::statusText(const QDateTime &now) const

@@ -8,7 +8,9 @@ public:
     void setSnapshot(const BillingSnapshot &snapshot);
     QDate selectedDate() const { return m_selected; }
     QRectF cellRect(int day) const;
+    QSize sizeHint() const override;
     QSize minimumSizeHint() const override;
+    int heightForWidth(int width) const override;
 signals:
     void daySelected(const QDate &date);
 protected:

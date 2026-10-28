@@ -1,8 +1,9 @@
 #include "TransactionFilter.h"
+#include "CategoryCatalog.h"
 
 QString TransactionFilter::validationError() const
 {
-    if (!category.isEmpty() && !Transaction::categories().contains(category))
+    if (!category.isEmpty() && !Transaction::categories().contains(category) && !CategoryCatalog::validPurpose(category))
         return QStringLiteral("请选择有效的筛选分类。");
     if (useDateRange) {
         if (!startDate.isValid() || !endDate.isValid())
@@ -15,13 +16,13 @@ QString TransactionFilter::validationError() const
 
 bool TransactionFilter::matches(const Transaction &transaction) const
 {
-    return (category.isEmpty() || transaction.category() == category)
+    return (category.isEmpty() || (CategoryCatalog::validPurpose(category)?transaction.purposeCategory() == category:transaction.category() == category))
         && (!useDateRange || (transaction.date() >= startDate && transaction.date() <= endDate));
 }
 
 QString TransactionFilter::description() const
 {
-    const QString categoryText = category.isEmpty() ? QStringLiteral("全部分类") : category;
+    const QString categoryText = category.isEmpty() ? QStringLiteral("全部分类") : (CategoryCatalog::validPurpose(category)?CategoryCatalog::purposeLabel(category):category);
     const QString dateText = useDateRange
         ? QStringLiteral("%1 至 %2").arg(startDate.toString(Qt::ISODate), endDate.toString(Qt::ISODate))
         : QStringLiteral("全部日期");

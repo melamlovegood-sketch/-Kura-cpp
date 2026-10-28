@@ -30,7 +30,7 @@ bool CsvExporter::write(const QString &path, const QList<Transaction> &records, 
         return false;
     }
     QByteArray header = QByteArray::fromHex("efbbbf"); // UTF-8 BOM for Excel Chinese text.
-    header += QStringLiteral("编号,日期,时间,名称,分类,金额（元）,备注,细分类,预算归属\r\n").toUtf8();
+    header += QStringLiteral("编号,日期,时间,名称,分类,金额（元）,备注,细分类,预算归属,消费用途\r\n").toUtf8();
     if (file.write(header) != header.size()) {
         error = file.errorString();
         return false;
@@ -40,7 +40,7 @@ bool CsvExporter::write(const QString &path, const QList<Transaction> &records, 
             .arg(record.amountCents() % 100, 2, 10, QChar('0'));
         const QStringList cells = {QString::number(record.id()), field(record.date().toString(Qt::ISODate)),
             field(record.time().isValid() ? record.time().toString(QStringLiteral("HH:mm:ss")) : QString()),
-            field(record.description(), true), field(record.category()), amount, field(record.note(), true), field(CategoryCatalog::label(record.detailCategory())), field(CategoryCatalog::isBasic(record.detailCategory())?QStringLiteral("基础生活"):QStringLiteral("可支配"))};
+            field(record.description(), true), field(record.category()), amount, field(record.note(), true), field(CategoryCatalog::label(record.detailCategory())), field(CategoryCatalog::scopeLabel(record.budgetScope())), field(CategoryCatalog::purposeLabel(record.purposeCategory()))};
         const QByteArray row = (cells.join(QChar(',')) + QStringLiteral("\r\n")).toUtf8();
         if (file.write(row) != row.size()) {
             error = QStringLiteral("导出写入失败：%1").arg(file.errorString());

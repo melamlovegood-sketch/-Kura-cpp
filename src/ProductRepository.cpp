@@ -80,8 +80,13 @@ QList<QPair<QString,QString>> ProductRepository::fieldLabels()
 bool ProductRepository::validFields(const QJsonObject &fields)
 {
     QSet<QString> allowed; for (const auto &field:fieldLabels()) allowed.insert(field.first);
-    for (auto it=fields.begin();it!=fields.end();++it) if (!allowed.contains(it.key()) || !it.value().isString() || it.value().toString().size()>1000) return false;
+    allowed.insert("purchase_reason"); allowed.insert("alternatives");
+    for (auto it=fields.begin();it!=fields.end();++it) if (!allowed.contains(it.key()) || !it.value().isString() || it.value().toString().size()>(it.key()=="purchase_reason"?500:1000)) return false;
     return true;
+}
+QString ProductRepository::purchaseReason(const ProductProfile &profile,const ProductContext &context)
+{
+    return profile.fields.contains("purchase_reason")?profile.fields.value("purchase_reason").toString():context.purchaseReason;
 }
 bool ProductRepository::validConversation(const QString &conversation)
 {
@@ -99,13 +104,14 @@ bool ProductRepository::context(const QString &kind,qint64 entityId,ProductConte
 {
     m_error.clear(); if (!validKind(kind) || entityId<=0) { m_error=QStringLiteral("请先选择商品。"); return false; }
     const QMap<QString,QString> sql={
-        {"wish","SELECT name,detail_category,estimated_cents,source_image FROM wishlist WHERE id=:id"},
-        {"transaction","SELECT description,detail_category,amount_cents,source_image FROM transactions WHERE id=:id"},
+        {"wish","SELECT name,detail_category,estimated_cents,source_image,reason FROM wishlist WHERE id=:id"},
+        {"transaction","SELECT description,detail_category,amount_cents,source_image,COALESCE((SELECT reason FROM wishlist WHERE transaction_id=t.id ORDER BY id LIMIT 1),'') FROM transactions t WHERE id=:id"},
         {"price","SELECT name,detail_category,COALESCE((SELECT amount_cents FROM price_records WHERE track_id=t.id ORDER BY observed_ms DESC,id DESC LIMIT 1),0),X'' FROM price_tracks t WHERE id=:id"},
         {"execution","SELECT name,detail_category,estimated_cents,X'' FROM execution_sessions WHERE id=:id"}};
     QSqlQuery query(m_database.database()); query.prepare(sql.value(kind)); query.bindValue(":id",entityId);
     if (!query.exec() || !query.next()) { m_error=QStringLiteral("商品已不存在，请刷新后重试。"); return false; }
-    result={kind,query.value(0).toString(),query.value(1).toString(),entityId,query.value(2).toLongLong(),query.value(3).toByteArray()}; return true;
+    result={kind,query.value(0).toString(),query.value(1).toString(),entityId,query.value(2).toLongLong(),query.value(3).toByteArray(),
+        kind=="wish" || kind=="transaction"?query.value(4).toString():QString()}; return true;
 }
 bool ProductRepository::load(qint64 id,ProductProfile &profile)
 {
@@ -118,7 +124,7 @@ bool ProductRepository::load(qint64 id,ProductProfile &profile)
 bool ProductRepository::ensure(const ProductContext &context,ProductProfile &profile)
 {
     m_error.clear();
-    if (context.name.trimmed().isEmpty() || context.name.size()>100 || !CategoryCatalog::isValid(context.category) || context.entityId<0 || (context.entityId && !validKind(context.kind))) { m_error=QStringLiteral("请先填写有效的商品名与品类。"); return false; }
+    if (context.name.trimmed().isEmpty() || context.name.size()>100 || context.purchaseReason.size()>500 || !CategoryCatalog::isValid(context.category) || context.entityId<0 || (context.entityId && !validKind(context.kind))) { m_error=QStringLiteral("请先填写有效的商品名与品类，想买理由最多500字。"); return false; }
     WorkflowStorage::Transaction transaction(m_database.database(),m_error); if (!transaction.ok()) return false;
     QSqlQuery query(m_database.database());
     if (context.entityId) {
@@ -138,7 +144,9 @@ bool ProductRepository::ensure(const ProductContext &context,ProductProfile &pro
             if (query.next()) { const auto id=query.value(0).toLongLong(); query.finish(); return attach(context.kind,context.entityId,id) && load(id,profile) && transaction.commit(); } query.finish();
         }
     }
-    query.prepare("INSERT INTO product_profiles(name,detail_category,updated_ms) VALUES(:name,:category,:now)");
+    query.prepare("INSERT INTO product_profiles(name,detail_category,fields_json,updated_ms) VALUES(:name,:category,:fields,:now)");
+    QJsonObject initialFields; if (!context.purchaseReason.isEmpty()) initialFields.insert("purchase_reason",context.purchaseReason);
+    query.bindValue(":fields",json(initialFields));
     query.bindValue(":name",context.name.trimmed()); query.bindValue(":category",context.category); query.bindValue(":now",QDateTime::currentMSecsSinceEpoch());
     if (!query.exec()) { m_error=WorkflowStorage::error(query.lastError()); return false; }
     const auto id=query.lastInsertId().toLongLong(); query.finish();
@@ -176,6 +184,11 @@ bool ProductRepository::save(ProductProfile &profile,const QByteArray &image,con
     query.prepare("UPDATE product_profiles SET fields_json=:fields,user_notes=:notes,updated_ms=:now WHERE id=:id AND updated_ms=:previous");
     query.bindValue(":fields",json(profile.fields)); query.bindValue(":notes",profile.notes.isNull()?QStringLiteral(""):profile.notes); query.bindValue(":now",revision); query.bindValue(":id",profile.id); query.bindValue(":previous",profile.revision);
     if (!query.exec() || query.numRowsAffected()!=1) { m_error=QStringLiteral("商品资料已在其他窗口更新，请重新打开后核对；当前输入未保存。"); return false; } query.finish();
+    if (profile.fields.contains("purchase_reason")) {
+        query.prepare("UPDATE wishlist SET reason=:reason WHERE status=0 AND id IN (SELECT entity_id FROM product_links WHERE kind='wish' AND product_id=:id)");
+        query.bindValue(":reason",profile.fields.value("purchase_reason").toString()); query.bindValue(":id",profile.id);
+        if (!query.exec()) { m_error=WorkflowStorage::error(query.lastError()); return false; } query.finish();
+    }
     if (!image.isEmpty()) {
         query.prepare("SELECT COUNT(*) FROM product_evidence WHERE product_id=:id"); query.bindValue(":id",profile.id);
         if (!query.exec() || !query.next() || query.value(0).toInt()>=12) { m_error=QStringLiteral("每件商品最多保存 12 张详情截图。"); return false; } query.finish();
@@ -209,7 +222,9 @@ QString ProductRepository::aiContext(qint64 productId,const ProductContext &cont
     for (const auto &shot:shots.mid(qMax(0,int(shots.size())-2))) sourceFacts << QJsonObject{{"captured_at",QDateTime::fromMSecsSinceEpoch(shot.createdMs).toString(Qt::ISODate)},
         {"recognition_note",shot.extracted.value("note").toString().left(300)},
         {"merchant_material_excerpt",shot.extracted.value("fields").toObject().value("materials").toString().left(300)}};
-    return json(QJsonObject{{"product",profile.name},{"current_record_name",context.name},{"category",profile.category},{"confirmed_details",profile.fields},
+    auto details=profile.fields; details.remove("purchase_reason"); details.remove("alternatives");
+    return json(QJsonObject{{"product",profile.name},{"current_record_name",context.name},{"category",profile.category},{"confirmed_details",details},
+        {"user_purchase_reason",purchaseReason(profile,context)},{"user_alternatives",profile.fields.value("alternatives").toString()},
         {"user_needs_and_notes",profile.notes},{"current_record_price",context.amountCents?Transaction::formatAmount(context.amountCents):QStringLiteral("未知")},
         {"price_history",observations},{"merchant_screenshot_extractions",sourceFacts}});
 }

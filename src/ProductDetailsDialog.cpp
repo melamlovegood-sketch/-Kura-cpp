@@ -1,4 +1,6 @@
 #include "ProductDetailsDialog.h"
+#include "ScreenshotDropTarget.h"
+#include "ProductShareDialog.h"
 #include "ImagePreview.h"
 #include "ShellWidgets.h"
 #include "Transaction.h"
@@ -33,8 +35,10 @@ ProductDetailsDialog::ProductDetailsDialog(DatabaseManager &database,const Produ
     m_settingsPath(database.databasePath()==":memory:"?QString():database.databasePath()+".ui.ini")
 {
     setObjectName("productDetailsDialog"); setWindowTitle(QStringLiteral("商品详情")); resize(680,740); setMinimumSize(440,400);
+    new ScreenshotDropTarget(this,[this] { return m_profile.id>0 && !m_service.busy(); },
+        [this](const QString &path) { return setScreenshot(path); },[this](const QImage &image) { return useImage(image); });
     auto *layout=new QVBoxLayout(this); layout->setContentsMargins(22,20,22,20); layout->setSpacing(12);
-    auto *heading=new QHBoxLayout; auto *title=ShellWidgets::label(context.name,this,"heading"); title->setObjectName("productDetailsTitle"); heading->addWidget(title,1);
+    auto *heading=new QHBoxLayout; heading->setObjectName("productDetailsHeading"); auto *title=ShellWidgets::label(context.name,this,"heading"); title->setObjectName("productDetailsTitle"); heading->addWidget(title,1);
     m_more=new QToolButton(this); m_more->setObjectName("productDetailsMoreButton"); m_more->setText(QStringLiteral("···")); m_more->setAccessibleName(QStringLiteral("商品资料选项")); m_more->setPopupMode(QToolButton::InstantPopup);
     auto *menu=new QMenu(m_more); connect(menu->addAction(QStringLiteral("关联已有商品资料…")),&QAction::triggered,this,&ProductDetailsDialog::associate); m_more->setMenu(menu); heading->addWidget(m_more); layout->addLayout(heading);
     if (context.amountCents) layout->addWidget(ShellWidgets::label(QStringLiteral("当前记录 %1 · 价格以你核对的记录为准").arg(Transaction::formatAmount(context.amountCents)),this,"muted"));
@@ -43,12 +47,14 @@ ProductDetailsDialog::ProductDetailsDialog(DatabaseManager &database,const Produ
     m_edit=new QPushButton(QStringLiteral("编辑"),body); m_edit->setObjectName("editProductDetailsButton"); m_edit->setProperty("quiet",true); information->addWidget(m_edit); column->addLayout(information);
     m_summary=ShellWidgets::label(QString(),body); m_summary->setObjectName("productDetailsSummaryLabel"); m_summary->setTextInteractionFlags(Qt::TextSelectableByMouse); column->addWidget(m_summary);
     m_captureTools=new QWidget(body); auto *uploads=new QHBoxLayout(m_captureTools); uploads->setContentsMargins(0,0,0,0);
-    m_upload=new QPushButton(QStringLiteral("上传详情截图"),body); m_upload->setObjectName("productDetailsImageButton");
+    m_upload=new QPushButton(QStringLiteral("上传或拖入详情截图"),body); m_upload->setObjectName("productDetailsImageButton");
     m_paste=new QPushButton(QStringLiteral("粘贴截图"),body); m_paste->setObjectName("productDetailsPasteButton"); uploads->addWidget(m_upload); uploads->addWidget(m_paste); uploads->addStretch(); column->addWidget(m_captureTools); m_captureTools->hide();
     m_preview=new QLabel(body); m_preview->setObjectName("productDetailsPreview"); m_preview->setAlignment(Qt::AlignCenter); m_preview->hide(); column->addWidget(m_preview);
     m_status=ShellWidgets::label(QStringLiteral("截图仅在点击识别时发送给设置中的 AI 服务。商家描述需核对后保存。"),body,"muted"); m_status->setObjectName("productDetailsStatusLabel"); m_status->hide(); column->addWidget(m_status);
     m_recognize=new QPushButton(QStringLiteral("AI 识别详情"),body); m_recognize->setObjectName("recognizeProductDetailsButton"); m_recognize->hide(); column->addWidget(m_recognize,0,Qt::AlignLeft);
     m_editor=new QWidget(body); m_editor->setObjectName("productDetailsEditor"); auto *editor=new QVBoxLayout(m_editor); editor->setContentsMargins(0,0,0,0); auto *form=new QFormLayout; form->setSpacing(10);
+    m_reason=new QPlainTextEdit(m_editor); m_reason->setObjectName("productPurchaseReasonEdit"); m_reason->setPlaceholderText(QStringLiteral("为什么想买？用在什么场景？最多500字，选填。")); m_reason->setMaximumHeight(90); form->addRow(QStringLiteral("想买理由"),m_reason);
+    m_alternatives=new QPlainTextEdit(m_editor); m_alternatives->setObjectName("productAlternativesEdit"); m_alternatives->setPlaceholderText(QStringLiteral("已有物品、其他商品，或借用／暂时不买。最多1000字，选填。")); m_alternatives->setMaximumHeight(90); form->addRow(QStringLiteral("替代品／其他办法"),m_alternatives);
     for (const auto &field:ProductRepository::fieldLabels()) { auto *input=new QLineEdit(m_editor); input->setObjectName("productField_"+field.first); input->setMaxLength(1000); m_fields.insert(field.first,input); form->addRow(field.second,input); }
     m_notes=new QPlainTextEdit(m_editor); m_notes->setObjectName("productUserNotesEdit"); m_notes->setPlaceholderText(QStringLiteral("你的用途、已选尺码、偏好、疑虑等，最多2000字。")); m_notes->setMaximumHeight(90); form->addRow(QStringLiteral("我的需求／备注"),m_notes); editor->addLayout(form);
     auto *saveRow=new QHBoxLayout; m_cancelEdit=new QPushButton(QStringLiteral("取消编辑"),m_editor); m_cancelEdit->setObjectName("cancelProductDetailsEditButton");
@@ -65,7 +71,8 @@ ProductDetailsDialog::ProductDetailsDialog(DatabaseManager &database,const Produ
     m_cancel=new QPushButton(QStringLiteral("取消请求"),this); m_cancel->setObjectName("cancelProductAIButton"); m_cancel->hide(); m_ask=new QPushButton(QStringLiteral("问问 AI"),this); m_ask->setObjectName("askProductAIButton"); m_ask->setProperty("primary",true); column->addStretch();
     auto *scroll=new QScrollArea(this); m_scroll=scroll; scroll->setWidgetResizable(true); scroll->setFrameShape(QFrame::NoFrame); scroll->setWidget(body); layout->addWidget(scroll,1);
     m_error=ShellWidgets::label(QString(),this,"error"); m_error->setObjectName("productDetailsErrorLabel"); m_error->hide(); layout->addWidget(m_error);
-    auto *close=new QPushButton(QStringLiteral("关闭"),this); close->setObjectName("closeProductDetailsButton"); auto *footer=new QHBoxLayout; footer->addWidget(close); footer->addWidget(m_cancel); footer->addStretch(); footer->addWidget(m_ask); layout->addLayout(footer);
+    m_share=new QPushButton(QStringLiteral("分享商品卡片"),this); m_share->setObjectName("shareProductCardButton"); m_share->setEnabled(false); connect(m_share,&QPushButton::clicked,this,&ProductDetailsDialog::share);
+    auto *close=new QPushButton(QStringLiteral("关闭"),this); close->setObjectName("closeProductDetailsButton"); auto *footer=new QHBoxLayout; footer->addWidget(close); footer->addWidget(m_cancel); footer->addStretch(); footer->addWidget(m_share); footer->addWidget(m_ask); layout->addLayout(footer);
     connect(m_chatToggle,&QToolButton::toggled,this,[this](bool open) {
         m_chatPanel->setVisible(open && m_editor->isHidden()); m_ask->setVisible(open && m_editor->isHidden());
         m_chatToggle->setArrowType(open?Qt::DownArrow:Qt::RightArrow);
@@ -99,6 +106,9 @@ void ProductDetailsDialog::render()
     for (const auto &field:ProductRepository::fieldLabels()) if (!m_profile.fields.value(field.first).toString().isEmpty()) text << field.second+QStringLiteral("：")+m_profile.fields.value(field.first).toString();
     if (text.isEmpty()) text << QStringLiteral("还没有商品资料。可以上传详情截图，或手动补充。");
     if (!m_profile.notes.isEmpty()) text << QStringLiteral("\n我的需求／备注：")+m_profile.notes;
+    const auto reason=ProductRepository::purchaseReason(m_profile,m_context);
+    if (!reason.isEmpty()) text << QStringLiteral("\n想买理由：")+reason;
+    if (!m_profile.fields.value("alternatives").toString().isEmpty()) text << QStringLiteral("\n替代品／其他办法：")+m_profile.fields.value("alternatives").toString();
     m_summary->setText(text.join('\n'));
     while (auto *item=m_galleryLayout->takeAt(0)) { delete item->widget(); delete item; }
     QList<ProductEvidence> evidence; if (!m_repository.evidence(m_profile.id,evidence)) { error(m_repository.lastError()); return; }
@@ -128,17 +138,21 @@ void ProductDetailsDialog::render()
 void ProductDetailsDialog::edit()
 {
     for (auto it=m_fields.begin();it!=m_fields.end();++it) it.value()->setText(m_profile.fields.value(it.key()).toString());
+    m_reason->setPlainText(ProductRepository::purchaseReason(m_profile,m_context)); m_alternatives->setPlainText(m_profile.fields.value("alternatives").toString()); m_share->setEnabled(false);
     m_notes->setPlainText(m_profile.notes); m_editor->show(); m_summary->hide(); m_ask->hide(); m_ask->setEnabled(false); m_edit->hide(); m_captureTools->show(); m_chatPanel->hide(); m_chatToggle->setEnabled(false); m_status->hide(); m_error->hide();
 }
 void ProductDetailsDialog::cancelEdit()
 {
+    m_share->setEnabled(true);
     m_pendingImage.clear(); m_pendingExtracted={}; m_preview->hide(); m_recognize->hide(); m_editor->hide(); m_summary->show(); m_edit->show(); m_captureTools->hide(); m_chatPanel->setVisible(m_chatToggle->isChecked()); m_chatToggle->setEnabled(true); m_ask->setVisible(m_chatToggle->isChecked()); m_ask->setEnabled(true); m_status->hide(); m_error->hide(); m_status->setText(QStringLiteral("编辑已取消，保留原资料。"));
 }
 void ProductDetailsDialog::save()
 {
     if (m_service.busy()) return;
+    if (m_reason->toPlainText().trimmed().size()>500 || m_alternatives->toPlainText().trimmed().size()>1000) { error(QStringLiteral("想买理由最多500字，替代品／其他办法最多1000字。当前输入已保留。")); return; }
     ProductProfile saved=m_profile; saved.fields={};
     for (auto it=m_fields.begin();it!=m_fields.end();++it) if (!it.value()->text().trimmed().isEmpty()) saved.fields.insert(it.key(),it.value()->text().trimmed());
+    saved.fields.insert("purchase_reason",m_reason->toPlainText().trimmed()); saved.fields.insert("alternatives",m_alternatives->toPlainText().trimmed());
     saved.notes=m_notes->toPlainText().trimmed();
     if (!m_repository.save(saved,m_pendingImage,m_pendingExtracted)) { error(m_repository.lastError()); return; }
     m_profile=saved; cancelEdit(); render(); m_status->show(); m_status->setText(QStringLiteral("商品资料已保存到本机；原截图可展开回看。")); emit profileChanged(m_profile.id);
@@ -188,6 +202,7 @@ void ProductDetailsDialog::setBusy(bool busy)
     for (auto *button:{m_edit,m_upload,m_paste,m_recognize,m_save,m_cancelEdit}) button->setEnabled(!busy);
     m_chatToggle->setEnabled(!busy && m_editor->isHidden()); m_ask->setVisible(m_chatToggle->isChecked() && m_editor->isHidden());
     m_more->setEnabled(!busy); m_editor->setEnabled(!busy); m_input->setEnabled(!busy); m_ask->setEnabled(!busy && m_editor->isHidden()); m_cancel->setVisible(busy);
+    m_share->setEnabled(!busy && m_editor->isHidden() && m_profile.id>0);
     m_ask->setText(busy && !m_recognizing?QStringLiteral("思考中…"):QStringLiteral("问问 AI")); m_recognize->setText(busy && m_recognizing?QStringLiteral("识别中…"):QStringLiteral("AI 识别详情"));
 }
 void ProductDetailsDialog::associate()
@@ -201,5 +216,12 @@ void ProductDetailsDialog::associate()
     if (!ok) return; const auto index=choices.indexOf(selected); if (index<0) return;
     if (m_context.entityId && !m_repository.attach(m_context.kind,m_context.entityId,ids[index])) { error(m_repository.lastError()); return; }
     if (!m_repository.load(ids[index],m_profile)) { error(m_repository.lastError()); return; } render(); emit profileChanged(m_profile.id);
+}
+void ProductDetailsDialog::share()
+{
+    if (m_service.busy() || !m_editor->isHidden()) return;
+    ProductProfile profile; auto context=m_context; QList<ProductEvidence> images;
+    if (!m_repository.load(m_profile.id,profile) || (context.entityId && !m_repository.context(context.kind,context.entityId,context)) || !m_repository.evidence(profile.id,images)) { error(m_repository.lastError()); return; }
+    auto *dialog=new ProductShareDialog(context,profile,images,this); dialog->setAttribute(Qt::WA_DeleteOnClose); dialog->open();
 }
 void ProductDetailsDialog::reject() { m_service.cancel(); QDialog::reject(); }

@@ -151,14 +151,12 @@ void BillingTests::monthChartsBudgetAndResponsivePreviews()
     QCOMPARE(calendar->selectedDate().day(),1);
     click(window,"billingTrendViewButton"); auto *trend=window.findChild<BillingTrendChart *>(); QVERIFY(trend->isVisible());
     click(window,"billingSixMonthTrendButton"); QCOMPARE(trend->points().size(),6); capture("trend");
-    click(window,"billingChartDetailsButton"); QVERIFY(window.findChild<QWidget *>("billingSidebar")->isVisible()); capture("details");
-    click(window,"billingChartDetailsButton");
-    click(window,"billingQuickRecordButton"); click(window,"billingBudgetSummaryButton");
+    click(window,"billingQuickRecordButton"); click(window,"billingEditBudgetButton");
     auto *budget=window.findChild<QDialog *>("billingBudgetDialog"); QVERIFY(budget->isVisible());
     window.findChild<QDoubleSpinBox *>("basicBudgetAmountSpinBox")->setValue(1000);
     window.findChild<QDoubleSpinBox *>("budgetAmountSpinBox")->setValue(2000); click(window,"saveBudgetButton");
     QVERIFY(window.findChild<QLabel *>("billingBudgetTotalLabel")->text().contains("3,000")); budget->accept(); settle();
-    QVERIFY(window.findChild<QLabel *>("billingBudgetSummaryLabel")->text().contains("2,763"));
+    QVERIFY(window.findChild<QLabel *>("billingBudgetBalanceLabel")->text().contains("2,763"));
     auto *month=window.findChild<MonthPicker *>("billingMonthPicker"); month->openPicker(); settle();
     QVERIFY(month->findChild<QWidget *>("monthPickerPopup")); click(*month,"pickMonth2");
     QCOMPARE(workspace->month().month(),2);
@@ -168,13 +166,11 @@ void BillingTests::monthChartsBudgetAndResponsivePreviews()
         auto *scroll=window.findChild<QScrollArea *>("billingWorkspaceScrollArea");
         QCOMPARE(scroll->horizontalScrollBar()->maximum(),0);
         capture("compact-"+theme);
-        click(window,"billingChartsViewButton"); click(window,"billingCalendarViewButton");
+        click(window,"billingChartsViewButton");
         QCOMPARE(scroll->horizontalScrollBar()->maximum(),0); capture("calendar-compact-"+theme);
         click(window,"billingSixMonthTrendButton");
         QCOMPARE(scroll->horizontalScrollBar()->maximum(),0); capture("trend-compact-"+theme);
-        click(window,"billingChartDetailsButton");
-        QCOMPARE(scroll->horizontalScrollBar()->maximum(),0); capture("details-compact-"+theme);
-        click(window,"billingChartDetailsButton"); click(window,"billingRecordViewButton");
+        click(window,"billingRecordViewButton");
     }
 }
 void BillingTests::focusedEntryPreservesDraftAndBudgetContext()
@@ -183,28 +179,27 @@ void BillingTests::focusedEntryPreservesDraftAndBudgetContext()
     MainWindow window(path); window.resize(1280,800); window.showPage(MainWindow::Page::Billing); window.show(); settle();
     auto *sidebar=window.findChild<QWidget *>("billingSidebar");
     auto *examples=window.findChild<QWidget *>("bookkeepingExamples");
-    auto *summary=window.findChild<QLabel *>("billingBudgetSummaryLabel");
+    auto *summary=window.findChild<QLabel *>("billingBudgetStateLabel");
     auto *workspace=window.findChild<BillingWorkspace *>();
-    QVERIFY(!sidebar->isVisible()); QVERIFY(examples->isVisible());
-    QVERIFY(summary->text().contains(QStringLiteral("还没有设置")));
+    QVERIFY(sidebar->isVisible()); QVERIFY(examples->isVisible());
+    QVERIFY(summary->text().contains(QStringLiteral("尚未设置")));
     auto *input=window.findChild<QPlainTextEdit *>("bookkeepingInput");
     input->setPlainText(QStringLiteral("午饭 15 元，等会儿确认"));
     QVERIFY(!examples->isVisible());
     click(window,"billingChartsViewButton"); QVERIFY(!sidebar->isVisible());
-    click(window,"billingChartDetailsButton"); QVERIFY(sidebar->isVisible());
-    click(window,"billingRecordViewButton"); QVERIFY(!sidebar->isVisible());
+    click(window,"billingRecordViewButton"); QVERIFY(sidebar->isVisible());
     QCOMPARE(input->toPlainText(),QStringLiteral("午饭 15 元，等会儿确认"));
     click(window,"bookkeepingManualModeButton"); fillManual(window,QStringLiteral("午饭"),15);
     click(window,"saveBookkeepingManualButton"); click(window,"bookkeepingAiModeButton");
     QVERIFY(input->toPlainText().isEmpty()); QVERIFY(!examples->isVisible());
-    click(window,"billingBudgetSummaryButton");
+    click(window,"billingEditBudgetButton");
     auto *budget=window.findChild<QDialog *>("billingBudgetDialog"); QVERIFY(budget->isVisible());
     window.findChild<QDoubleSpinBox *>("basicBudgetAmountSpinBox")->setValue(0);
     window.findChild<QDoubleSpinBox *>("budgetAmountSpinBox")->setValue(10);
     click(window,"saveBudgetButton"); budget->accept(); settle();
-    QVERIFY(summary->text().contains(QStringLiteral("已超出"))); QVERIFY(summary->text().contains("5.00"));
+    QVERIFY(summary->text().contains(QStringLiteral("已超出"))); QVERIFY(window.findChild<QLabel *>("billingBudgetBalanceLabel")->text().contains("5.00"));
     QVERIFY(workspace->setMonth(QDate::currentDate().addMonths(-1)));
-    QVERIFY(summary->text().contains(QStringLiteral("还没有设置")));
+    QVERIFY(summary->text().contains(QStringLiteral("尚未设置")));
     QVERIFY(!examples->isVisible()); // An empty month does not bring onboarding back for existing users.
     const auto preview=qEnvironmentVariable("KURA_PREVIEW_DIR");
     if (!preview.isEmpty()) {
@@ -226,6 +221,8 @@ void BillingTests::directChartViewsKeepRangeAndOpenSelectedRecords()
     click(window,"billingChartsViewButton"); click(window,"billingSixMonthTrendButton");
     QVERIFY(window.findChild<BillingTrendChart *>()->isVisible());
     QCOMPARE(window.findChild<QLabel *>("billingChartAmountLabel")->text(),QStringLiteral("¥46.00"));
+    QVERIFY(window.findChild<BillingCalendar *>()->isVisible());
+    QCOMPARE(window.findChild<QLabel *>("billingCalendarAmountLabel")->text(),QStringLiteral("¥34.00"));
     QVERIFY(window.findChild<QLabel *>("billingChartRangeLabel")->text().contains("2023.08"));
     QVERIFY(window.findChild<QLabel *>("billingChartRangeLabel")->text().contains("2024.01"));
     auto *trend=window.findChild<BillingTrendChart *>();
@@ -244,7 +241,6 @@ void BillingTests::directChartViewsKeepRangeAndOpenSelectedRecords()
     QCOMPARE(records.size(),2); QCOMPARE(records[1][0].toDate(),QDate(2024,1,9)); QCOMPARE(records[1][1].toDate(),QDate(2024,1,9));
     click(window,"billingRecordsBackButton"); click(window,"billingRecordViewButton"); click(window,"billingChartsViewButton");
     QVERIFY(window.findChild<QPushButton *>("billingTrendViewButton")->isChecked());
-    click(window,"billingCalendarViewButton");
     auto *calendar=window.findChild<BillingCalendar *>();
     QTest::mouseClick(calendar,Qt::LeftButton,Qt::NoModifier,calendar->cellRect(9).center().toPoint()); settle();
     click(window,"billingDayRecordsButton");

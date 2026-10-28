@@ -4,7 +4,7 @@
 #include <QDateTime>
 struct ExecutionSession {
     static constexpr int MaximumAdviceLength=128000;
-    qint64 id=0,estimatedCents=0,transactionId=0;
+    qint64 id=0,estimatedCents=0,transactionId=0,wishId=0;
     QString name,category,mode=QStringLiteral("fast"),state=QStringLiteral("active"),notes,advice;
     int durationSeconds=900;
     QDateTime startedAt,deadline,closedAt;

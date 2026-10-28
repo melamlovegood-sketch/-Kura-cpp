@@ -195,7 +195,7 @@ void StatisticsWidget::setMonth(const QDate &month)
 void StatisticsWidget::renderCategories()
 {
     const QDate month(m_yearEdit->value(),m_categoryMonth->currentIndex()+1,1);
-    const auto categories = CategorySummary::calculate(m_records,month);
+    const auto categories = CategorySummary::calculatePurposes(m_records,month);
     qint64 total=0, count=0;
     m_categoryTable->setRowCount(categories.size());
     for (int row=0;row<categories.size();++row) {

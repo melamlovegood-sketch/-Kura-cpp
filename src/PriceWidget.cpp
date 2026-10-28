@@ -1,3 +1,4 @@
+#include "EmptyAmountSpinBox.h"
 #include "PriceWidget.h"
 #include "ShellWidgets.h"
 #include "CategoryCatalog.h"
@@ -191,7 +192,7 @@ void PriceWidget::configure()
 {
     const auto *track=selected(); if (!track || !track->active) return; const auto id=track->id;
     auto *dialog=new QDialog(this); dialog->setObjectName("priceSettingsDialog"); dialog->setWindowTitle(QStringLiteral("目标价与商品链接")); dialog->setAttribute(Qt::WA_DeleteOnClose); dialog->resize(540,260); auto *layout=new QVBoxLayout(dialog); auto *form=new QFormLayout;
-    auto *target=new QDoubleSpinBox(dialog); target->setObjectName("priceTargetSpinBox"); target->setRange(0,99999999.99); target->setDecimals(2); target->setValue(double(track->targetCents)/100); target->setSpecialValueText(QStringLiteral("不设置目标价"));
+    auto *target=new EmptyAmountSpinBox(dialog,QStringLiteral("不设置目标价（元）")); target->setObjectName("priceTargetSpinBox"); target->setRange(0,99999999.99); target->setDecimals(2); target->setValue(double(track->targetCents)/100);
     auto *url=new QLineEdit(track->sourceUrl,dialog); url->setObjectName("priceSourceUrlEdit"); url->setMaxLength(2000); form->addRow(QStringLiteral("目标价（元）"),target); form->addRow(QStringLiteral("商品链接"),url); layout->addLayout(form); auto *error=ShellWidgets::label(QString(),dialog,"error"); layout->addWidget(error); auto *save=new QPushButton(QStringLiteral("保存目标价"),dialog); save->setObjectName("savePriceTargetButton"); layout->addWidget(save,0,Qt::AlignRight);
     connect(save,&QPushButton::clicked,dialog,[this,dialog,id,target,url,error] { if (!target->hasAcceptableInput()) { error->setText(QStringLiteral("请填写有效目标价。")); return; } target->interpretText(); if (!m_repository.configure(id,qRound64(target->value()*100),url->text())) { error->setText(m_repository.lastError()); return; } dialog->accept(); refresh(id); emit pricesChanged(); }); dialog->open();
 }

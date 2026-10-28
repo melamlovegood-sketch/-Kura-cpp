@@ -7,3 +7,6 @@
 *.sqlite-journal
 *.sqlite-wal
 *.sqlite-shm
+
+# Optional private trial credentials are never source assets.
+kura-trial.json

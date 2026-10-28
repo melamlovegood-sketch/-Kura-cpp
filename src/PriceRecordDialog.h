@@ -11,8 +11,6 @@ class QImage;
 class QLabel;
 class QLineEdit;
 class QPushButton;
-class QDragEnterEvent;
-class QDropEvent;
 
 class PriceRecordDialog:public QDialog {
     Q_OBJECT
@@ -23,9 +21,6 @@ public:
 signals:
     void priceSaved(qint64 trackId);
     void settingsRequested();
-protected:
-    void dragEnterEvent(QDragEnterEvent *event) override;
-    void dropEvent(QDropEvent *event) override;
 private:
     bool useImage(const QImage &image);
     void setBusy(bool busy);

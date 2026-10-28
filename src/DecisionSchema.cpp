@@ -27,6 +27,10 @@ bool DecisionSchema::upgrade(QSqlDatabase database, QString &error)
         for (const auto &field : fields)
             if (!columns.contains(field.first) && !run(QStringLiteral("ALTER TABLE %1 ADD COLUMN %2 %3").arg(table, field.first, field.second))) return false;
     }
+    if (!query.exec(QStringLiteral("PRAGMA table_info(transactions)"))) { error=query.lastError().text(); database.rollback(); return false; }
+    QSet<QString> expenseColumns; while (query.next()) expenseColumns.insert(query.value(1).toString()); query.finish();
+    if (!expenseColumns.contains("purpose_category") && !run(QStringLiteral("ALTER TABLE transactions ADD COLUMN purpose_category TEXT NOT NULL DEFAULT '' CHECK(purpose_category IN ('','food','fun','clothing','travel','other','unclassified'))"))) return false;
+    if (!expenseColumns.contains("budget_scope") && !run(QStringLiteral("ALTER TABLE transactions ADD COLUMN budget_scope TEXT NOT NULL DEFAULT '' CHECK(budget_scope IN ('','basic','discretionary'))"))) return false;
     if (!run(QStringLiteral("CREATE TABLE IF NOT EXISTS wish_pools (id INTEGER PRIMARY KEY AUTOINCREMENT, wish_id INTEGER NOT NULL, name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 100), target_cents INTEGER NOT NULL CHECK(typeof(target_cents)='integer' AND target_cents BETWEEN 1 AND 9999999999), created_ms INTEGER NOT NULL, closed_ms INTEGER)"))) return false;
     if (!run(QStringLiteral("CREATE UNIQUE INDEX IF NOT EXISTS one_active_wish_pool ON wish_pools((1)) WHERE closed_ms IS NULL"))) return false;
     if (!run(QStringLiteral("CREATE TABLE IF NOT EXISTS savings_records (id INTEGER PRIMARY KEY AUTOINCREMENT, pool_id INTEGER, amount_cents INTEGER NOT NULL CHECK(typeof(amount_cents)='integer' AND amount_cents BETWEEN 1 AND 9999999999), description TEXT NOT NULL CHECK(length(description) BETWEEN 1 AND 1000), created_ms INTEGER NOT NULL, request_token TEXT NOT NULL UNIQUE CHECK(length(request_token) BETWEEN 1 AND 64))"))) return false;

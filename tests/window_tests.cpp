@@ -44,7 +44,7 @@ static void fill(AddTransactionDialog &dialog, const QString &name, double amoun
 {
     dialog.findChild<QLineEdit *>(QStringLiteral("descriptionEdit"))->setText(name);
     dialog.findChild<QDoubleSpinBox *>(QStringLiteral("amountSpinBox"))->setValue(amount);
-    dialog.findChild<QComboBox *>(QStringLiteral("categoryComboBox"))->setCurrentText(CategoryCatalog::label(CategoryCatalog::fromLegacy(category)));
+    dialog.findChild<QComboBox *>(QStringLiteral("categoryComboBox"))->setCurrentText(CategoryCatalog::purposeLabel(CategoryCatalog::purposeFromDetail(CategoryCatalog::fromLegacy(category))));
     dialog.findChild<QDateEdit *>(QStringLiteral("dateEdit"))->setDate(date);
 }
 
@@ -121,7 +121,7 @@ void WindowTests::saveThenRestart()
         QCOMPARE(table->rowCount(), 2);
         QCOMPARE(table->item(0, 0)->data(Qt::UserRole).toLongLong(), savedId);
         QCOMPARE(table->item(0, 1)->text(), QStringLiteral("午饭"));
-        QCOMPARE(table->item(1, 2)->text(), QStringLiteral("交通"));
+        QCOMPARE(table->item(1, 2)->text(), QStringLiteral("出行"));
         const QString preview = qEnvironmentVariable("KURA_PREVIEW_DIR");
         if (!preview.isEmpty())
             QVERIFY(restarted.grab().save(preview + QStringLiteral("/sqlite-reloaded.png")));
@@ -136,7 +136,7 @@ void WindowTests::invalidAndCancelledInputs()
     auto *table = window.findChild<QTableWidget *>(QStringLiteral("transactionTable"));
     auto *dialog = openDialog(window);
     QVERIFY(dialog);
-    fill(*dialog, QStringLiteral("  "), 28, QStringLiteral("餐饮"), QDate::currentDate());
+    fill(*dialog, QStringLiteral("  "), 0, QStringLiteral("餐饮"), QDate::currentDate());
     auto *save = dialog->findChild<QPushButton *>(QStringLiteral("saveButton"));
     save->click();
     QVERIFY(dialog->isVisible());
@@ -246,7 +246,7 @@ void WindowTests::refreshFailurePreservesTable()
     QVERIFY(query.exec(QStringLiteral("DROP TABLE transactions")));
     const QString previousSummary = window.findChild<QLabel *>(QStringLiteral("filteredExpenseLabel"))->text();
     const QString previousRange = window.findChild<QLabel *>(QStringLiteral("appliedFilterLabel"))->text();
-    window.findChild<QComboBox *>(QStringLiteral("categoryFilter"))->setCurrentText(QStringLiteral("交通"));
+    window.findChild<QComboBox *>(QStringLiteral("categoryFilter"))->setCurrentText(QStringLiteral("出行"));
     window.findChild<QPushButton *>(QStringLiteral("applyFilterButton"))->click();
     auto *table = window.findChild<QTableWidget *>(QStringLiteral("transactionTable"));
     QCOMPARE(table->rowCount(), 1);
@@ -309,7 +309,7 @@ void WindowTests::editAndDeleteThenRestart()
         QCOMPARE(table->currentRow(), 1); // Date change reordered rows, selection follows the id.
         QCOMPARE(table->item(1, 0)->data(Qt::UserRole).toLongLong(), keptId);
         QCOMPARE(table->item(1, 1)->text(), QStringLiteral("教材"));
-        QCOMPARE(table->item(1, 2)->text(), QStringLiteral("学习（旧分类）"));
+        QCOMPARE(table->item(1, 2)->text(), QStringLiteral("其他"));
         QCOMPARE(table->item(1, 3)->text(), QStringLiteral("¥32.50"));
         QCOMPARE(window.findChild<QLabel *>(QStringLiteral("totalExpenseLabel"))->text(),
                  QStringLiteral("全部支出：¥36.50"));
@@ -404,7 +404,7 @@ void WindowTests::filtersAndTotalsUpdate()
     const QString preview = qEnvironmentVariable("KURA_PREVIEW_DIR");
     if (!preview.isEmpty())
         QVERIFY(window.grab().save(preview + QStringLiteral("/bookkeeping-main.png")));
-    category->setCurrentText(QStringLiteral("餐饮"));
+    category->setCurrentText(QStringLiteral("吃喝"));
     apply->click();
     QCOMPARE(table->rowCount(), 3);
     QCOMPARE(filtered->text(), QStringLiteral("当前结果：3 笔 · ¥37.50"));
@@ -433,13 +433,13 @@ void WindowTests::filtersAndTotalsUpdate()
     QVERIFY(window.findChild<QLabel *>(QStringLiteral("databaseErrorLabel"))->text()
                 .contains(QStringLiteral("开始日期")));
     end->setDate(today);
-    category->setCurrentText(QStringLiteral("购物"));
+    category->setCurrentText(QStringLiteral("服饰鞋包"));
     apply->click();
     QCOMPARE(table->rowCount(), 0);
     QCOMPARE(filtered->text(), QStringLiteral("当前结果：0 笔 · ¥0.00"));
     QCOMPARE(total->text(), QStringLiteral("全部支出：¥41.50"));
     QVERIFY(window.findChild<QLabel *>(QStringLiteral("emptyHint"))->isVisible());
-    category->setCurrentText(QStringLiteral("交通"));
+    category->setCurrentText(QStringLiteral("出行"));
     apply->click();
     QCOMPARE(table->rowCount(), 1);
     auto *dialog = openDialog(window);
@@ -567,7 +567,7 @@ void WindowTests::editedRecordMovesOutOfFilter()
     dialog->findChild<QPushButton *>(QStringLiteral("saveButton"))->click();
     settle();
     auto *category = window.findChild<QComboBox *>(QStringLiteral("categoryFilter"));
-    category->setCurrentText(QStringLiteral("餐饮"));
+    category->setCurrentText(QStringLiteral("吃喝"));
     window.findChild<QPushButton *>(QStringLiteral("applyFilterButton"))->click();
     auto *table = window.findChild<QTableWidget *>(QStringLiteral("transactionTable"));
     table->selectRow(0);
@@ -580,7 +580,7 @@ void WindowTests::editedRecordMovesOutOfFilter()
     dialog->findChild<QPushButton *>(QStringLiteral("saveButton"))->click();
     settle();
     QCOMPARE(table->rowCount(), 0);
-    QCOMPARE(category->currentText(), QStringLiteral("餐饮"));
+    QCOMPARE(category->currentText(), QStringLiteral("吃喝"));
     QCOMPARE(window.findChild<QLabel *>(QStringLiteral("filteredExpenseLabel"))->text(), QStringLiteral("当前结果：0 笔 · ¥0.00"));
     QCOMPARE(window.findChild<QLabel *>(QStringLiteral("totalExpenseLabel"))->text(), QStringLiteral("全部支出：¥12.34"));
     QVERIFY(window.statusBar()->currentMessage().contains(QStringLiteral("不符合")));

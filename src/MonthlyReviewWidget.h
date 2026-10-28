@@ -7,6 +7,7 @@ class QLabel;
 class QPushButton;
 class QAction;
 class QToolButton;
+class AchievementWall;
 class MonthlyReviewWidget:public QWidget {
     Q_OBJECT
 public:
@@ -16,8 +17,6 @@ public:
     void cancelAnalysis();
 signals:
     void tagsChanged();
-    void purchaseReviewRequested();
-    void statisticsRequested(const QDate &month);
 private:
     void render();
     void updateControls();
@@ -41,5 +40,6 @@ private:
     QAction *m_local,*m_regenerate;
     QToolButton *m_more;
     QPushButton *m_prev,*m_next,*m_generate,*m_cancel,*m_tags,*m_worthTab,*m_regretTab,*m_previousStory;
-    QPushButton *m_expandStory,*m_dueReviews;
+    QPushButton *m_expandStory;
+    AchievementWall *m_achievements;
 };

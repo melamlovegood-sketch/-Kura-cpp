@@ -1,5 +1,6 @@
 #include "BudgetRepository.h"
 #include "DatabaseManager.h"
+#include "CategoryCatalog.h"
 
 #include <QSqlError>
 #include <QSqlQuery>
@@ -64,7 +65,7 @@ bool BudgetRepository::loadStatus(const QDate &month, MonthlyBudgetStatus &statu
             "(SELECT basic_limit_cents FROM monthly_budgets WHERE month=:month), "
             "(SELECT discretionary_limit_cents FROM monthly_budgets WHERE month=:month), "
             "COALESCE((SELECT SUM(amount_cents) FROM transactions WHERE date BETWEEN :first AND :last "
-            "AND (detail_category IN ('canteen','transport','daily_supplies','subscription') OR (detail_category='' AND category='交通'))),0)"))) {
+            "AND %1),0)").arg(CategoryCatalog::basicExpenseSql()))) {
         m_lastError = QStringLiteral("无法准备预算查询：%1").arg(query.lastError().text());
         return false;
     }

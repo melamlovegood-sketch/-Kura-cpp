@@ -19,6 +19,7 @@ public:
     bool refresh();
     QPushButton *takeAddButton();
     void showPrices(qint64 trackId=0);
+    void showReadyWishes(qint64 wishId = 0);
     // Refresh countdowns from the cached snapshot; no disk writes or network work.
     void refreshCountdowns(const QDateTime &now = QDateTime::currentDateTimeUtc());
 signals:
@@ -33,7 +34,8 @@ private:
     void updateActions();
     void openWishDialog(const WishItem *item = nullptr);
     void purchaseSelected();
-    void confirmSelected(bool removing);
+    void confirmWish(qint64 id);
+    void openProductDetails(qint64 id);
     void showError(const QString &error);
     void openPrices();
     void adjustOrder();
@@ -45,13 +47,14 @@ private:
     QHash<qint64,PriceTrack> m_prices;
     QSet<qint64> m_legacyArchives;
     QHash<qint64,qint64> m_positions;
-    QString m_sortMode=QStringLiteral("newest");
-    QAction *m_sortNewest,*m_sortOldest,*m_sortManual,*m_adjustOrder;
+    QString m_sortMode=QStringLiteral("priority");
+    QAction *m_sortPriority,*m_sortNewest,*m_sortOldest,*m_sortManual,*m_adjustOrder;
     QPushButton *m_priceButton;
     QList<WishItem> m_items;
     bool m_available = false;
     bool m_hasSnapshot = false;
     QDateTime m_now;
+    qint64 m_goalWishId = 0;
     ProductList *m_table;
     QComboBox *m_filter;
     QLabel *m_summary;
@@ -61,11 +64,5 @@ private:
     QWidget *m_addBar;
     QPushButton *m_add;
     QPushButton *m_refresh;
-    QToolButton *m_productMore;
-    QAction *m_pin;
-    QAction *m_edit;
-    QAction *m_delete;
-    QAction *m_abandonAction;
     QPushButton *m_purchase;
-    QPushButton *m_abandon;
 };

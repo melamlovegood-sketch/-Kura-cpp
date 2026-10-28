@@ -72,6 +72,7 @@ bool BillParser::parseRows(const QList<QStringList> &rows,BillParseResult &resul
     const int dateCol=column({QStringLiteral("交易时间"),QStringLiteral("交易创建时间"),QStringLiteral("付款时间"),QStringLiteral("日期")}), timeCol=kura?column({QStringLiteral("时间")}):-1;
     const int nameCol=column({QStringLiteral("商品说明"),QStringLiteral("商品名称"),QStringLiteral("商品"),QStringLiteral("名称")}), amountCol=column({QStringLiteral("金额")},true), ioCol=column({QStringLiteral("收/支")});
     const int statusCol=column({QStringLiteral("当前状态"),QStringLiteral("交易状态")}), partyCol=column({QStringLiteral("交易对方")},true), typeCol=column({QStringLiteral("交易类型"),QStringLiteral("交易分类")}), numberCol=column({QStringLiteral("交易单号"),QStringLiteral("交易订单号"),QStringLiteral("交易号")},true), categoryCol=column({QStringLiteral("细分类"),QStringLiteral("分类")}),noteCol=column({QStringLiteral("备注")});
+    const int purposeCol=column({QStringLiteral("消费用途")}), scopeCol=column({QStringLiteral("预算归属")});
     if (dateCol<0 || nameCol<0 || amountCol<0 || (!kura && ioCol<0)) { error=QStringLiteral("账单缺少日期、商品、金额或收支字段。"); return false; }
     const auto get=[](const QStringList &row,int i) { return i>=0 && i<row.size()?row[i].trimmed():QString(); };
     for (int i=headerRow+1;i<rows.size();++i) {
@@ -94,6 +95,16 @@ bool BillParser::parseRows(const QList<QStringList> &rows,BillParseResult &resul
         bool certain=false; draft.category=guessCategory(goods.isEmpty()?party:goods,certain); if (!certain) draft.category=guessCategory(draft.originalName,certain);
         if (kura && categoryCol>=0) for (const auto &key:CategoryCatalog::keys()) if (get(row,categoryCol)==key || get(row,categoryCol)==CategoryCatalog::label(key)) { draft.category=key; certain=true; break; }
         if (kura && !certain && categoryCol>=0) { const auto legacy=CategoryCatalog::fromLegacy(get(row,categoryCol)); if (!legacy.isEmpty()) { draft.category=legacy; certain=true; } }
+        draft.purposeCategory=CategoryCatalog::purposeFromDetail(draft.category);
+        draft.budgetScope=CategoryCatalog::isBasic(draft.category)?QStringLiteral("basic"):QStringLiteral("discretionary");
+        // Only recognize explicit garment terms; an online purchase alone is insufficient.
+        if (!kura && QRegularExpression(QStringLiteral("衣服|衬衫|外套|裙|裤|运动鞋|皮鞋|背包|手提包")).match(draft.originalName).hasMatch()) draft.purposeCategory="clothing";
+        if (kura && purposeCol>=0) for (const auto &key:CategoryCatalog::purposeKeys()) if (get(row,purposeCol)==key || get(row,purposeCol)==CategoryCatalog::purposeLabel(key)) { draft.purposeCategory=key; break; }
+        if (kura && scopeCol>=0) {
+            const auto scope=get(row,scopeCol);
+            if (scope==QStringLiteral("必要生活") || scope==QStringLiteral("基础生活") || scope=="basic") draft.budgetScope="basic";
+            else if (scope==QStringLiteral("自由消费") || scope==QStringLiteral("可支配") || scope=="discretionary") draft.budgetScope="discretionary";
+        }
         draft.fingerprint=hash({draft.date.toString(Qt::ISODate),draft.time.isValid()?draft.time.toString("HH:mm:ss"):QString(),QString::number(draft.cents),normalized(draft.originalName)});
         draft.payloadHash=hash({draft.platform,draft.externalId,draft.fingerprint});
         draft.key=hash(draft.externalId.isEmpty()?QStringList{draft.platform,"file",fileHash.isEmpty()?hash({QString::number(rows.size())}):fileHash,QString::number(i+1),draft.fingerprint}:QStringList{draft.platform,"external",draft.externalId});

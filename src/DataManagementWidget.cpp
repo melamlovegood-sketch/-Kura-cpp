@@ -1,5 +1,6 @@
 #include "ModernSelectors.h"
 #include "AppTheme.h"
+#include "ShellWidgets.h"
 #include "DataManagementWidget.h"
 #include "DecisionDialog.h"
 #include "BillImportDialog.h"
@@ -18,9 +19,15 @@
 #include <QMessageBox>
 #include <QPushButton>
 #include <QVBoxLayout>
+#include <QCheckBox>
+#include <QSpinBox>
+#include <QDesktopServices>
+#include <QUrl>
+#include <QDir>
 
 DataManagementWidget::DataManagementWidget(DatabaseManager &database, QWidget *parent)
-    : QWidget(parent), m_database(database), m_backup(database)
+    : QWidget(parent), m_database(database), m_backup(database),
+      m_autoBackup(database,database.databasePath()==":memory:"?QString():database.databasePath()+".ui.ini")
 {
     setObjectName(QStringLiteral("dataManagementWidget"));
     auto *layout = new QVBoxLayout(this);
@@ -43,7 +50,31 @@ DataManagementWidget::DataManagementWidget(DatabaseManager &database, QWidget *p
     m_filterLabel=new QLabel(this); m_filterLabel->setObjectName("exportFilterLabel"); m_filterLabel->setWordWrap(true); exports->addWidget(m_filterLabel);
     m_export=new QPushButton(QStringLiteral("选择位置并导出"),this); m_export->setObjectName("exportCsvButton"); m_export->setProperty("primary",true); exports->addWidget(m_export,0,Qt::AlignRight); exports->addStretch();
     auto *backups=page(QStringLiteral("保存完整的 SQLite 备份，包含账单、截图、预算、清单、购买复盘、价格历史和商品资料。"));
-    m_saveBackup=new QPushButton(QStringLiteral("选择位置并备份"),this); m_saveBackup->setObjectName("saveBackupButton"); m_saveBackup->setProperty("primary",true); backups->addWidget(m_saveBackup,0,Qt::AlignRight); backups->addStretch();
+    m_saveBackup=new QPushButton(QStringLiteral("选择位置并备份"),this); m_saveBackup->setObjectName("saveBackupButton"); m_saveBackup->setProperty("primary",true); backups->addWidget(m_saveBackup,0,Qt::AlignLeft);
+    backups->addSpacing(12);
+    backups->addWidget(ShellWidgets::label(QStringLiteral("自动备份"),this,"heading"));
+    m_autoEnabled=new QCheckBox(QStringLiteral("每天首次打开时备份"),this); m_autoEnabled->setObjectName("autoBackupCheckBox"); m_autoEnabled->setChecked(m_autoBackup.enabled()); backups->addWidget(m_autoEnabled);
+    auto *retention=new QHBoxLayout; retention->addWidget(new QLabel(QStringLiteral("保留最近"),this));
+    m_backupKeep=new QSpinBox(this); m_backupKeep->setObjectName("autoBackupKeepSpinBox"); m_backupKeep->setRange(1,30); m_backupKeep->setValue(m_autoBackup.keepCount()); m_backupKeep->setSuffix(QStringLiteral(" 份")); retention->addWidget(m_backupKeep); retention->addStretch(); backups->addLayout(retention);
+    backups->addWidget(ShellWidgets::label(QStringLiteral("开启后立即生成一份，此后每天首次启动时保存。自动备份位于本机数据文件夹，只轮换自动生成的文件；手动备份会一直保留。建议另存一份到其他设备。"),this,"muted"));
+    m_saveBackupPreferences=new QPushButton(QStringLiteral("保存备份设置"),this); m_saveBackupPreferences->setObjectName("saveAutoBackupSettingsButton"); backups->addWidget(m_saveBackupPreferences,0,Qt::AlignLeft);
+    m_backupStatus=ShellWidgets::label(QString(),this,"muted"); m_backupStatus->setObjectName("autoBackupStatusLabel"); backups->addWidget(m_backupStatus);
+    auto *folders=new QHBoxLayout;
+    auto *openData=new QPushButton(QStringLiteral("打开数据文件夹"),this); openData->setObjectName("openDataFolderButton"); folders->addWidget(openData);
+    auto *openBackups=new QPushButton(QStringLiteral("打开自动备份文件夹"),this); openBackups->setObjectName("openBackupFolderButton"); folders->addWidget(openBackups); backups->addLayout(folders); backups->addStretch();
+    const bool persistent=database.databasePath()!=":memory:";
+    openData->setEnabled(persistent); openBackups->setEnabled(persistent);
+    connect(openData,&QPushButton::clicked,this,[this] {
+        if (!QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(m_database.databasePath()).absolutePath()))) showResult(QStringLiteral("无法打开数据文件夹。"),true);
+    });
+    connect(openBackups,&QPushButton::clicked,this,[this] {
+        if (!QDir().mkpath(m_autoBackup.directory()) || !QDesktopServices::openUrl(QUrl::fromLocalFile(m_autoBackup.directory()))) showResult(QStringLiteral("无法打开自动备份文件夹。"),true);
+    });
+    connect(m_saveBackupPreferences,&QPushButton::clicked,this,[this] {
+        QString error;
+        if (!m_autoBackup.configure(m_autoEnabled->isChecked(),m_backupKeep->value(),error) || !m_autoBackup.runIfDue(error)) { showResult(error,true); refreshBackupStatus(); return; }
+        refreshBackupStatus(); showResult(m_autoBackup.enabled()?QStringLiteral("已保存自动备份设置。"):QStringLiteral("已关闭自动备份，已有备份仍保留。")); emit backupStateChanged();
+    });
     auto *restores=page(QStringLiteral("从完整备份恢复会替换当前所有业务数据。选择文件后先检查备份内容，再由你确认；恢复前会自动备份当前数据。"));
     m_restore=new QPushButton(QStringLiteral("选择备份文件"),this); m_restore->setObjectName("restoreBackupButton"); restores->addWidget(m_restore,0,Qt::AlignRight); restores->addStretch();
     connect(m_import,&QPushButton::clicked,this,&DataManagementWidget::openImportDialog);
@@ -62,6 +93,7 @@ DataManagementWidget::DataManagementWidget(DatabaseManager &database, QWidget *p
     connect(m_saveBackup, &QPushButton::clicked, this, [this] { chooseFile(1); });
     connect(m_restore, &QPushButton::clicked, this, [this] { chooseFile(2); });
     setAppliedFilter({}); updateControls();
+    refreshBackupStatus();
 }
 
 void DataManagementWidget::showOperation(int operation)
@@ -73,6 +105,7 @@ void DataManagementWidget::setDatabaseAvailable(bool available)
 {
     m_available = available;
     if (!available) showResult(QStringLiteral("数据库不可用，暂时无法导出、备份或恢复。"), true);
+    else { QString error; if (!m_autoBackup.runIfDue(error)) showResult(error,true); refreshBackupStatus(); emit backupStateChanged(); }
     updateControls();
 }
 void DataManagementWidget::setAppliedFilter(const TransactionFilter &filter)
@@ -85,6 +118,13 @@ void DataManagementWidget::updateControls()
     for (auto *button : {m_export, m_saveBackup, m_restore,m_import}) button->setEnabled(m_available && !m_busy);
     for (auto *button:m_entries) button->setEnabled(m_available && !m_busy);
     m_exportScope->setEnabled(m_available && !m_busy);
+    const bool automatic=m_available && !m_busy && m_database.databasePath()!=":memory:";
+    m_autoEnabled->setEnabled(automatic); m_backupKeep->setEnabled(automatic); m_saveBackupPreferences->setEnabled(automatic);
+}
+QString DataManagementWidget::backupSummary() const { return m_autoBackup.lastBackupText(); }
+void DataManagementWidget::refreshBackupStatus()
+{
+    m_backupStatus->setText(QStringLiteral("%1 · %2").arg(m_autoBackup.lastBackupText(),m_autoBackup.enabled()?QStringLiteral("自动备份已开启"):QStringLiteral("自动备份未开启")));
 }
 void DataManagementWidget::showResult(const QString &message, bool error)
 {
@@ -152,7 +192,9 @@ bool DataManagementWidget::backupTo(const QString &path)
     if (!m_available || m_busy) return false;
     QString error;
     if (!m_backup.backup(path, error)) { showResult(error, true); return false; }
-    showResult(QStringLiteral("完整备份已保存：\n%1").arg(path));
+    if (!m_autoBackup.recordManualBackup(error)) showResult(error,true);
+    else showResult(QStringLiteral("完整备份已保存：\n%1").arg(path));
+    refreshBackupStatus(); emit backupStateChanged();
     return true;
 }
 bool DataManagementWidget::requestRestore(const QString &path)
@@ -163,8 +205,8 @@ bool DataManagementWidget::requestRestore(const QString &path)
     QString error;
     if (!m_backup.prepareRestore(path, info, error)) { showResult(QStringLiteral("备份检查失败：%1").arg(error), true); return false; }
     auto *confirmation = new QMessageBox(QMessageBox::Question, QStringLiteral("恢复完整备份"),
-        QStringLiteral("备份文件：%1\n\n消费 %2 笔，预算 %3 个月，愿望 %4 条。\n许愿目标 %5 个，忍住记录 %6 条。\n购物原则 %7 条，品牌 %8 个，决策会话 %9 次。\n购买复盘 %10 项，价格商品 %11 个，价格记录 %12 条。\n导入索引 %13 条，月度标记 %14 条，月度故事 %15 份。\n将替换当前数据，并先自动保存当前数据的备份。\n筛选、未保存的预算和决策草稿会重置。确定恢复吗？")
-            .arg(path).arg(info.expenseCount).arg(info.budgetCount).arg(info.wishCount).arg(info.poolCount).arg(info.savingCount).arg(info.ruleCount).arg(info.brandCount).arg(info.sessionCount).arg(info.reviewCount).arg(info.trackCount).arg(info.priceCount).arg(info.importKeyCount).arg(info.tagCount).arg(info.storyCount),
+        QStringLiteral("备份文件：%1\n\n消费 %2 笔，预算 %3 个月，愿望 %4 条。\n许愿目标 %5 个，忍住记录 %6 条。\n购物原则 %7 条，决策会话 %8 次。\n购买复盘 %9 项，价格商品 %10 个，价格记录 %11 条。\n导入索引 %12 条，月度标记 %13 条，月度故事 %14 份。\n将替换当前数据，并先自动保存当前数据的备份。\n筛选、未保存的预算和决策草稿会重置。确定恢复吗？")
+            .arg(path).arg(info.expenseCount).arg(info.budgetCount).arg(info.wishCount).arg(info.poolCount).arg(info.savingCount).arg(info.ruleCount).arg(info.sessionCount).arg(info.reviewCount).arg(info.trackCount).arg(info.priceCount).arg(info.importKeyCount).arg(info.tagCount).arg(info.storyCount),
         QMessageBox::Yes | QMessageBox::No, this);
     confirmation->setObjectName(QStringLiteral("restoreConfirmationDialog"));
     confirmation->setDetailedText(confirmation->text());

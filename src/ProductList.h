@@ -54,12 +54,12 @@ public:
     }
     QSize sizeHint() const override
     {
-        return layout() ? layout()->sizeHint().expandedTo(QSize(0, 100)) : QSize(0, 100);
+        return layout() ? layout()->sizeHint().expandedTo(QSize(0, 88)) : QSize(0, 88);
     }
-    QSize minimumSizeHint() const override { return QSize(0, 100); }
+    QSize minimumSizeHint() const override { return QSize(0, 88); }
     int heightForWidth(int width) const override
     {
-        return layout() ? qMax(100, layout()->totalHeightForWidth(width)) : 100;
+        return layout() ? qMax(88, layout()->totalHeightForWidth(width)) : 88;
     }
 };
 
@@ -89,6 +89,7 @@ class ProductList : public QTableWidget
 {
 public:
     void setProductDetailsHandler(std::function<void(int)> handler) { m_productDetails=std::move(handler); }
+    void setRowActionsHandler(std::function<void(int,QHBoxLayout *)> handler) { m_rowActions=std::move(handler); }
     explicit ProductList(int columns, QWidget *parent = nullptr)
         : QTableWidget(0, columns, parent)
     {
@@ -139,9 +140,9 @@ public:
             toggle->setObjectName(QStringLiteral("productToggleButton"));
             toggle->setProperty("productToggle", true);
             toggle->setCursor(Qt::PointingHandCursor);
-            toggle->setMinimumHeight(100);
+            toggle->setMinimumHeight(88);
             auto *header = new QHBoxLayout(toggle);
-            header->setContentsMargins(25, 22, 25, 22);
+            header->setContentsMargins(24, 16, 24, 16);
             header->setSpacing(18);
             header->addWidget(new ProductStateBadge(toggle));
             auto *identity = new QVBoxLayout;
@@ -173,6 +174,7 @@ public:
             note->setAlignment(Qt::AlignRight);
             price->addWidget(note);
             header->addLayout(price);
+            if (m_rowActions) m_rowActions(row,header);
             auto *arrow = new ProductArrow(toggle);
             arrow->setObjectName(QStringLiteral("productArrowLabel"));
             arrow->setProperty("productArrow", true);
@@ -214,6 +216,23 @@ public:
         }
         body->findChild<QPushButton *>()->setAccessibleName(name + QStringLiteral("，") + status
             + QStringLiteral("，") + amount + QStringLiteral("，展开或收起详情"));
+    }
+
+    void setCostHint(int row,const QString &text,const QString &basis) {
+        auto *body=cellWidget(row,0); if (!body) return;
+        auto *label=body->findChild<QLabel *>("productCostHintLabel");
+        if (!label) {
+            auto *note=body->findChild<QLabel *>("productPriceNoteLabel");
+            label=new QLabel(note->parentWidget()); label->setObjectName("productCostHintLabel"); label->setProperty("muted",true);
+            label->setTextFormat(Qt::PlainText); label->setWordWrap(true); label->setMaximumWidth(170); label->setAlignment(Qt::AlignRight);
+            label->setAttribute(Qt::WA_TransparentForMouseEvents);
+            // The price note belongs to the right-hand vertical layout.
+            auto *header=qobject_cast<QHBoxLayout *>(note->parentWidget()->layout());
+            for (int i=0;header && i<header->count();++i) if (auto *column=header->itemAt(i)->layout()) if (column->indexOf(note)>=0) { column->addWidget(label); break; }
+        }
+        label->setText(text); label->ensurePolished();
+        label->setMinimumWidth(text.isEmpty()?0:qMin(170,label->fontMetrics().horizontalAdvance(text)));
+        label->setToolTip(basis); label->setVisible(!text.isEmpty());
     }
 
     void setCoolingState(int row,bool cooling,bool closed=false) {
@@ -278,6 +297,7 @@ protected:
 
 private:
     std::function<void(int)> m_productDetails;
+    std::function<void(int,QHBoxLayout *)> m_rowActions;
     QWidget *m_details = nullptr;
     bool m_fitting = false;
 };

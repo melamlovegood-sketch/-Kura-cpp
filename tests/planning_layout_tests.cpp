@@ -7,6 +7,10 @@
 #include "DatabaseBackupService.h"
 #include "ProductRepository.h"
 #include "MonthlyReviewRepository.h"
+#include "WishPoolRepository.h"
+#include "ProductDetailsDialog.h"
+#include <QMessageBox>
+#include <algorithm>
 #include <QAction>
 #include <QComboBox>
 #include <QDialog>
@@ -52,6 +56,7 @@ class PlanningLayoutTests:public QObject {
     Q_OBJECT
 private slots:
     void unifiedListAndPerProductPrices();
+    void directGoalAndAbandonActions();
     void coolingBadgeOnlyRestrictsPurchasing();
     void manualOrderPersistsAndNewItemsAppend();
     void historyAndSmallThemesFit();
@@ -59,6 +64,47 @@ private slots:
     void duplicateNamesDoNotSharePricesAndDeleteDoesNotReimport();
     void archivedPricesDoNotInventAbandonmentDecisions();
 };
+
+void PlanningLayoutTests::directGoalAndAbandonActions()
+{
+    QTemporaryDir dir; DatabaseManager db(dir.filePath("actions.sqlite")); QVERIFY(db.initialize()); QVERIFY(populate(db,2));
+    MainWindow window(db.databasePath()); window.resize(1000,800); window.show(); window.showPage(MainWindow::Page::Wishlist); settle();
+    auto *table=window.findChild<QTableWidget *>("wishlistTable");
+    const auto original=ids(table); QVERIFY(original.size()>1);
+    const auto goal=[table](int row) { return table->cellWidget(row,0)->findChild<QToolButton *>("wishGoalButton"); };
+    const auto abandon=[table](int row) { return table->cellWidget(row,0)->findChild<QToolButton *>("wishAbandonButton"); };
+    QVERIFY(!window.findChild<QWidget *>("wishProductMoreButton"));
+    QVERIFY(goal(0)->isVisible()); QVERIFY(!goal(0)->isChecked());
+    QVERIFY(goal(0)->toolTip().contains(QStringLiteral("点击设为许愿目标")));
+    QTest::mouseClick(goal(0),Qt::LeftButton); settle();
+    QCOMPARE(window.currentPage(),MainWindow::Page::Wishlist); QVERIFY(goal(0)->isChecked()); QVERIFY(!goal(1)->isChecked());
+    QVERIFY(screenshot(window,"goal-lit"));
+    QVERIFY(!table->item(0,0)->isSelected());
+    WishPoolRepository pool(db); WishPoolSnapshot snapshot; QVERIFY(pool.load(snapshot)); QCOMPARE(snapshot.wishId,original[0]);
+    goal(1)->click(); settle(); auto *replace=window.findChild<QMessageBox *>("replaceWishPoolDialog"); QVERIFY(replace);
+    QVERIFY(!goal(1)->isChecked()); replace->button(QMessageBox::No)->click(); settle();
+    QVERIFY(goal(0)->isChecked()); QVERIFY(!goal(1)->isChecked());
+    goal(1)->click(); settle(); replace=window.findChild<QMessageBox *>("replaceWishPoolDialog"); QVERIFY(replace);
+    replace->button(QMessageBox::Yes)->click(); settle(); QVERIFY(!goal(0)->isChecked()); QVERIFY(goal(1)->isChecked());
+    window.findChild<QAction *>("wishlistSortOldestAction")->trigger(); settle();
+    auto *wishlist=window.findChild<WishlistWidget *>(); QVERIFY(wishlist->refresh());
+    const int targetRow=ids(table).indexOf(original[1]); QVERIFY(targetRow>=0); QVERIFY(goal(targetRow)->isChecked());
+    table->selectRow(targetRow); settle();
+    abandon(targetRow)->click(); settle(); auto *confirmation=window.findChild<QMessageBox *>("wishConfirmationDialog"); QVERIFY(confirmation);
+    QVERIFY(confirmation->text().contains(QStringLiteral("确定删除")));
+    QCOMPARE(confirmation->defaultButton(),qobject_cast<QPushButton *>(confirmation->button(QMessageBox::No)));
+    confirmation->button(QMessageBox::No)->click(); settle(); QCOMPARE(ids(table).size(),original.size()); QVERIFY(goal(targetRow)->isChecked());
+    abandon(targetRow)->click(); settle(); confirmation=window.findChild<QMessageBox *>("wishConfirmationDialog"); QVERIFY(confirmation);
+    confirmation->button(QMessageBox::Yes)->click(); settle(); QVERIFY(!ids(table).contains(original[1]));
+    QVERIFY(pool.load(snapshot)); QCOMPARE(snapshot.wishId,0);
+    QList<WishItem> wishes; WishlistRepository repository(db); QVERIFY(repository.findAll(wishes));
+    const auto found=std::find_if(wishes.cbegin(),wishes.cend(),[&](const WishItem &wish) { return wish.id==original[1]; });
+    QVERIFY(found!=wishes.cend()); QCOMPARE(found->status,WishStatus::Abandoned);
+    window.resize(780,720); settle(); table->selectRow(0); settle();
+    QVERIFY(goal(0)->geometry().width()>=36); QVERIFY(abandon(0)->isVisible()); QVERIFY(screenshot(window,"direct-actions"));
+    click(window,"wishProductInfoButton"); auto *details=window.findChild<ProductDetailsDialog *>(); QVERIFY(details);
+    QVERIFY(details->findChild<QPushButton *>("editWishDetailsButton")->isVisible()); details->reject(); settle();
+}
 
 void PlanningLayoutTests::unifiedListAndPerProductPrices()
 {
@@ -96,7 +142,7 @@ void PlanningLayoutTests::coolingBadgeOnlyRestrictsPurchasing()
     QVERIFY(widget.findChild<QPushButton *>("wishPriceButton")->isEnabled()); QVERIFY(!widget.findChild<QLabel *>("wishProductDetailsLabel")->text().contains(QStringLiteral("剩余")));
     widget.refreshCountdowns(wish.readyAt); settle(); QVERIFY(buy->isEnabled()); QCOMPARE(ids(table),order);
     QVERIFY(!table->cellWidget(0,0)->findChild<QWidget *>("productStateBadge")->property("cooling").toBool());
-    QCOMPARE(table->cellWidget(0,0)->findChild<QLabel *>("productStatusLabel")->text(),QStringLiteral("待决定"));
+    QCOMPARE(table->cellWidget(0,0)->findChild<QLabel *>("productStatusLabel")->text(),QStringLiteral("中优先 · 待决定"));
     QVERIFY(screenshot(widget,"ready")); widget.refreshCountdowns(now); QVERIFY(!buy->isEnabled());
 }
 

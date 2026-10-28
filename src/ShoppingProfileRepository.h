@@ -1,6 +1,8 @@
 #pragma once
 #include "DatabaseManager.h"
 #include <QStringList>
+// Legacy brand storage is kept only for old databases and backup compatibility.
+// Active screens and AI context no longer consume trusted-brand preferences.
 struct BrandEntry { qint64 id=0; QString name,category,note; int weight=0; bool active=true; int worthCount=0,regretCount=0; };
 class ShoppingProfileRepository {
 public:

@@ -39,8 +39,8 @@ bool TransactionRepository::add(Transaction &transaction)
     }
     QSqlQuery query(connection);
     if (!query.prepare(QStringLiteral(
-            "INSERT INTO transactions(description, amount_cents, category, date, occurred_time, note, detail_category, source_image) "
-            "VALUES (:description, :amount, :category, :date, :time, :note, :detail, :image)"))) {
+            "INSERT INTO transactions(description, amount_cents, category, date, occurred_time, note, detail_category, source_image, purpose_category, budget_scope) "
+            "VALUES (:description, :amount, :category, :date, :time, :note, :detail, :image, :purpose, :scope)"))) {
         m_lastError = QStringLiteral("无法准备保存操作：%1").arg(query.lastError().text());
         return false;
     }
@@ -52,6 +52,8 @@ bool TransactionRepository::add(Transaction &transaction)
         ? transaction.time().toString(QStringLiteral("HH:mm:ss")) : QStringLiteral(""));
     query.bindValue(QStringLiteral(":note"), transaction.note().isNull() ? QStringLiteral("") : transaction.note());
     query.bindValue(QStringLiteral(":detail"), transaction.detailCategory());
+    query.bindValue(":purpose", transaction.purposeCategory());
+    query.bindValue(":scope", transaction.budgetScope());
     query.bindValue(QStringLiteral(":image"), transaction.sourceImage().isNull() ? QByteArray("") : transaction.sourceImage());
     if (!query.exec()) {
         m_lastError = writeError(query.lastError());
@@ -59,7 +61,7 @@ bool TransactionRepository::add(Transaction &transaction)
     }
     transaction = Transaction(query.lastInsertId().toLongLong(), transaction.description(),
                               transaction.amountCents(), transaction.category(), transaction.date(),
-                              transaction.time(), transaction.note(), transaction.detailCategory(), transaction.sourceImage());
+                              transaction.time(), transaction.note(), transaction.detailCategory(), transaction.sourceImage(), transaction.purposeCategory(), transaction.budgetScope());
     m_lastError.clear();
     return true;
 }
@@ -81,7 +83,7 @@ bool TransactionRepository::update(const Transaction &transaction)
     QSqlQuery query(connection);
     if (!query.prepare(QStringLiteral(
             "UPDATE transactions SET description=:description, amount_cents=:amount, "
-            "category=:category, date=:date, occurred_time=:time, note=:note, detail_category=:detail, source_image=:image WHERE id=:id"))) {
+            "category=:category, date=:date, occurred_time=:time, note=:note, detail_category=:detail, source_image=:image, purpose_category=:purpose, budget_scope=:scope WHERE id=:id"))) {
         m_lastError = writeError(query.lastError());
         return false;
     }
@@ -94,6 +96,8 @@ bool TransactionRepository::update(const Transaction &transaction)
         ? transaction.time().toString(QStringLiteral("HH:mm:ss")) : QStringLiteral(""));
     query.bindValue(QStringLiteral(":note"), transaction.note().isNull() ? QStringLiteral("") : transaction.note());
     query.bindValue(QStringLiteral(":detail"), transaction.detailCategory());
+    query.bindValue(":purpose", transaction.purposeCategory());
+    query.bindValue(":scope", transaction.budgetScope());
     query.bindValue(QStringLiteral(":image"), transaction.sourceImage().isNull() ? QByteArray("") : transaction.sourceImage());
     if (!query.exec()) {
         m_lastError = writeError(query.lastError());
@@ -150,7 +154,7 @@ bool TransactionRepository::findAll(QList<Transaction> &transactions)
     }
     QSqlQuery query(connection);
     if (!query.exec(QStringLiteral(
-            "SELECT id, description, amount_cents, category, date, occurred_time, note, detail_category, source_image FROM transactions "
+            "SELECT id, description, amount_cents, category, date, occurred_time, note, detail_category, source_image, purpose_category, budget_scope FROM transactions "
             "ORDER BY date DESC, occurred_time DESC, id DESC"))) {
         m_lastError = QStringLiteral("无法读取消费记录：%1").arg(query.lastError().text());
         return false;
@@ -162,7 +166,7 @@ bool TransactionRepository::findAll(QList<Transaction> &transactions)
         Transaction transaction(query.value(0).toLongLong(), query.value(1).toString(),
                                 query.value(2).toLongLong(), query.value(3).toString(),
                                 QDate::fromString(query.value(4).toString(), Qt::ISODate), time,
-                                query.value(6).toString(), query.value(7).toString(), query.value(8).toByteArray());
+                                query.value(6).toString(), query.value(7).toString(), query.value(8).toByteArray(), query.value(9).toString(), query.value(10).toString());
         if (transaction.id() <= 0 || !transaction.validationError().isEmpty()
             || (!timeText.isEmpty() && (!time.isValid() || time.toString(QStringLiteral("HH:mm:ss")) != timeText))) {
             m_lastError = QStringLiteral("数据库中编号 %1 的记录无效，请检查数据文件。")
