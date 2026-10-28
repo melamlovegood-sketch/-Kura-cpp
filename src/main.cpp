@@ -13,7 +13,7 @@ int main(int argc, char *argv[])
     QApplication app(argc, argv);
     app.setOrganizationName(QStringLiteral("Kura"));
     app.setApplicationName(QStringLiteral("KuraCpp"));
-    app.setApplicationVersion(QStringLiteral("0.12.7"));
+    app.setApplicationVersion(QStringLiteral("0.12.8"));
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("Kura C++ 个人消费决策与预算管理"));
     parser.addHelpOption(); parser.addVersionOption();

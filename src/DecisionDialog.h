@@ -20,6 +20,7 @@ public:
     bool setScreenshot(const QString &path);
     void reject() override;
     void setResearchAvailable(bool available);
+    void setInitialText(const QString &text);
     void showHandoffError(const QString &message);
 signals:
     void committed(const QString &outcome, qint64 id);

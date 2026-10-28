@@ -111,9 +111,11 @@ ExecutionWidget::ExecutionWidget(DatabaseManager &database,const QString &settin
 
     QFrame *inputCard; auto *inputLayout=ShellWidgets::card(m_steps,&inputCard); inputCard->setObjectName("executionInputCard");
     inputLayout->setContentsMargins(18,16,18,16); inputLayout->setSpacing(12);
-    inputLayout->addWidget(ShellWidgets::label(QStringLiteral("需要再想一想？"),inputCard,"eyebrow"));
-    inputLayout->addWidget(ShellWidgets::label(QStringLiteral("先核对商品，再带着预算和问题继续研究。"),inputCard,"muted"));
-    m_input=new QPushButton(QStringLiteral("我现在想买……"),inputCard); m_input->setObjectName("executionInputButton"); m_input->setProperty("primary",true); inputLayout->addWidget(m_input);
+    inputLayout->addWidget(ShellWidgets::label(QStringLiteral("买什么？"),inputCard,"eyebrow"));
+    m_name=new QLineEdit(inputCard); m_name->setObjectName("executionNameEdit"); m_name->setMaxLength(100);
+    m_name->setPlaceholderText(QStringLiteral("输入这次想买的东西")); inputLayout->addWidget(m_name);
+    m_next=new QPushButton(QStringLiteral("生成决策简报  →"),inputCard); m_next->setObjectName("executionNextButton"); m_next->setProperty("primary",true); inputLayout->addWidget(m_next);
+    m_input=new QPushButton(QStringLiteral("用文字或截图核对商品 →"),inputCard); m_input->setObjectName("executionInputButton"); m_input->setProperty("executionQuiet",true); inputLayout->addWidget(m_input,0,Qt::AlignLeft);
     pageLayout->addWidget(inputCard); m_stepPages << inputCard;
 
     auto *modePage=new QWidget(m_steps); modePage->setObjectName("executionBriefPage");
@@ -121,7 +123,7 @@ ExecutionWidget::ExecutionWidget(DatabaseManager &database,const QString &settin
     QFrame *briefCard; auto *briefLayout=ShellWidgets::card(modePage,&briefCard); briefCard->setObjectName("executionOpeningBriefCard");
     briefLayout->addWidget(ShellWidgets::label(QStringLiteral("决策简报"),briefCard,"eyebrow"));
     m_modeProduct=ShellWidgets::label(QString(),briefCard); m_modeProduct->setObjectName("executionModeProductLabel"); briefLayout->addWidget(m_modeProduct);
-    m_name=new QLineEdit(briefCard); m_name->setObjectName("executionNameEdit"); m_name->setMaxLength(100); briefLayout->addWidget(m_name);
+    m_reviewName=new QLineEdit(briefCard); m_reviewName->setObjectName("executionReviewNameEdit"); m_reviewName->setMaxLength(100); briefLayout->addWidget(m_reviewName);
     auto *extraLayout=disclosure(briefLayout,briefCard,QStringLiteral("修改金额与用途"),"executionExtraToggle");
     auto *form=new QFormLayout; form->setSpacing(12); form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
     m_amount=new QDoubleSpinBox(briefCard); m_amount->setObjectName("executionEstimatedAmountSpinBox");
@@ -222,8 +224,12 @@ ExecutionWidget::ExecutionWidget(DatabaseManager &database,const QString &settin
     endings->addWidget(m_skip); endings->addStretch(); endings->addWidget(m_undecided); layout->addLayout(endings);
     m_error=ShellWidgets::label(QString(),this,"error"); m_error->setObjectName("executionStatusLabel"); m_error->hide(); layout->addWidget(m_error); layout->addStretch(1);
 
-    connect(m_input,&QPushButton::clicked,this,&ExecutionWidget::inputRequested);
-    connect(m_name,&QLineEdit::returnPressed,this,[this] { goToStep(1); });
+    connect(m_input,&QPushButton::clicked,this,[this] { emit inputRequested(m_name->text().trimmed()); });
+    connect(m_next,&QPushButton::clicked,this,[this] { goToStep(1); });
+    connect(m_name,&QLineEdit::returnPressed,m_next,&QPushButton::click);
+    connect(m_reviewName,&QLineEdit::returnPressed,this,[this] { goToStep(1); });
+    connect(m_name,&QLineEdit::textChanged,m_reviewName,&QLineEdit::setText);
+    connect(m_reviewName,&QLineEdit::textChanged,m_name,&QLineEdit::setText);
     connect(m_edit,&QPushButton::clicked,this,[this] { goToStep(1); });
     connect(m_back,&QPushButton::clicked,this,[this] { if (m_session.id) goToStep(2); else showStep(0); });
     connect(m_addRule,&QPushButton::clicked,this,[this] { editRules(true); });
@@ -455,7 +461,8 @@ void ExecutionWidget::updateControls()
 {
     const bool active=m_session.id>0,research=m_mode->currentData().toString()=="research";
     m_productDetails->setEnabled(m_available && !m_name->text().trimmed().isEmpty()); m_activeProductDetails->setEnabled(m_available && active);
-    for (auto *widget:QList<QWidget *>{m_name,m_category,m_amount,m_purpose,m_brands}) widget->setEnabled(m_available);
+    for (auto *widget:QList<QWidget *>{m_name,m_reviewName,m_category,m_amount,m_purpose,m_brands}) widget->setEnabled(m_available);
+    m_next->setEnabled(m_available && !m_name->text().trimmed().isEmpty());
     for (auto *widget:QList<QWidget *>{m_mode,m_minutes,m_fastChoice,m_researchChoice}) widget->setEnabled(m_available && !active);
     m_fastChoice->setChecked(!research); m_researchChoice->setChecked(research); m_duration->setVisible(!research);
     m_start->setEnabled(m_available); m_start->setText(active?QStringLiteral("继续  →"):QStringLiteral("开始  →"));

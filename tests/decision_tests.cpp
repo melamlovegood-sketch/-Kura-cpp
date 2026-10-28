@@ -330,7 +330,7 @@ void DecisionTests::sharedEntriesAndResearchHandoff()
     MainWindow window(path); window.show(); settle();
     window.findChild<QPushButton *>("homeDecisionButton")->click(); settle();
     auto *home=window.findChild<DecisionDialog *>(); QVERIFY(home); QCOMPARE(home->property("decisionStage").toInt(),0); home->reject(); settle();
-    window.showPage(MainWindow::Page::Execution); QVERIFY(!window.findChild<QLineEdit *>("executionNameEdit")->isVisible());
+    window.showPage(MainWindow::Page::Execution); QVERIFY(window.findChild<QLineEdit *>("executionNameEdit")->isVisible());
     window.findChild<QPushButton *>("executionInputButton")->click(); settle(); auto *dialog=window.findChild<DecisionDialog *>(); QVERIFY(dialog);
     QCOMPARE(dialog->property("decisionStage").toInt(),0);
     const auto imagePath=dir.filePath("item.png"); QImage image(180,100,QImage::Format_RGB32); image.fill(Qt::gray); QVERIFY(image.save(imagePath)); QVERIFY(dialog->setScreenshot(imagePath));

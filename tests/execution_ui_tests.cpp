@@ -3,6 +3,7 @@
 #include "ExecutionRepository.h"
 #include "ExecutionWidget.h"
 #include "DecisionChatWidget.h"
+#include "DecisionDialog.h"
 #include "ShoppingProfileRepository.h"
 #include "TransactionRepository.h"
 #include "WishDialog.h"
@@ -39,11 +40,8 @@ void fill(MainWindow &window,const QString &name=QStringLiteral("苹果手机"),
     field<QLineEdit>(window,"executionPurposeEdit")->setText(QStringLiteral("拍照，记录生活"));
 }
 void next(MainWindow &window) {
-    auto *execution=field<ExecutionWidget>(window,"executionWidget");
-    if (!execution->activeSessionId()) {
-        ParsedProduct p; p.name=field<QLineEdit>(window,"executionNameEdit")->text(); p.amountCents=qRound64(field<QDoubleSpinBox>(window,"executionEstimatedAmountSpinBox")->value()*100); p.note=field<QLineEdit>(window,"executionPurposeEdit")->text(); p.category=field<QComboBox>(window,"executionCategoryComboBox")->currentData().toString();
-        QVERIFY(execution->prepareDecision(p));
-    }
+    if (field<QWidget>(window,"executionInputCard")->isVisible()) field<QPushButton>(window,"executionNextButton")->click();
+    else QTest::keyClick(field<QLineEdit>(window,"executionReviewNameEdit"),Qt::Key_Return);
     settle();
 }
 void start(MainWindow &window) { next(window); field<QPushButton>(window,"startExecutionButton")->click(); settle(); }
@@ -60,7 +58,35 @@ private slots:
     void productOnlyEntryAndPrinciples();
     void modesSwitchWithoutRestartingSession();
     void expiredTimerNeverBuysAutomatically();
+    void focusedInputSurvivesPurchaseFlowAndKeepsSharedEntry();
 };
+
+void ExecutionUiTests::focusedInputSurvivesPurchaseFlowAndKeepsSharedEntry()
+{
+    QTemporaryDir dir; const auto path=dir.filePath("focused-input.sqlite");
+    DatabaseManager db(path); QVERIFY(db.initialize());
+    MainWindow window(path); window.show(); window.showPage(MainWindow::Page::Execution); settle();
+    auto *name=field<QLineEdit>(window,"executionNameEdit");
+    QVERIFY2(name->isVisible(),"The refined execution entry must ask what to buy directly, before opening a purchase dialog.");
+    auto *nextButton=field<QPushButton>(window,"executionNextButton");
+    QVERIFY(!nextButton->isEnabled());
+    name->setText(QStringLiteral("耳机")); QVERIFY(nextButton->isEnabled());
+    QTest::keyClick(name,Qt::Key_Return); settle();
+    QVERIFY(field<QWidget>(window,"executionModeCard")->isVisible());
+    QVERIFY(field<QPushButton>(window,"executionResearchChoiceButton")->isChecked());
+    QVERIFY(!window.findChild<DecisionDialog *>());
+    QCOMPARE(count(db,"execution_sessions"),0); QCOMPARE(count(db,"transactions"),0);
+    auto *reviewName=field<QLineEdit>(window,"executionReviewNameEdit");
+    QCOMPARE(reviewName->text(),name->text()); reviewName->setText(QStringLiteral("通勤耳机"));
+    field<QPushButton>(window,"executionBackButton")->click(); settle();
+    QVERIFY(name->isVisible()); QCOMPARE(name->text(),QStringLiteral("通勤耳机"));
+    field<QPushButton>(window,"executionInputButton")->click(); settle();
+    auto *dialog=window.findChild<DecisionDialog *>(); QVERIFY(dialog && dialog->isVisible());
+    QCOMPARE(field<QPlainTextEdit>(*dialog,"decisionInput")->toPlainText(),QStringLiteral("通勤耳机"));
+    dialog->reject(); settle();
+    QCOMPARE(name->text(),QStringLiteral("通勤耳机"));
+    QCOMPARE(count(db,"execution_sessions"),0); QCOMPARE(count(db,"transactions"),0);
+}
 
 void ExecutionUiTests::stepsAndRealBudget()
 {

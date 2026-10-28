@@ -27,7 +27,7 @@ public:
     bool prepareDecision(const ParsedProduct &product,const QByteArray &image={},qint64 brandId=0,qint64 productId=0);
     qint64 activeSessionId() const { return m_session.id; }
 signals:
-    void inputRequested();
+    void inputRequested(const QString &initialText);
     void wishlistRequested();
     void purchaseRequested(const Transaction &draft,qint64 sessionId,qint64 brandId);
 protected:
@@ -60,7 +60,7 @@ private:
     ExecutionSession m_session;
     bool m_available=false,m_loading=false,m_aiBusy=false,m_quickReady=false;
     int m_phase=0;
-    QLineEdit *m_name;
+    QLineEdit *m_name,*m_reviewName;
     QLineEdit *m_purpose;
     QDoubleSpinBox *m_amount;
     QComboBox *m_category,*m_mode,*m_brands;
@@ -73,7 +73,7 @@ private:
     QLabel *m_timer,*m_error;
     QWidget *m_steps;
     QList<QWidget *> m_stepPages;
-    QPushButton *m_edit,*m_fastChoice,*m_researchChoice;
+    QPushButton *m_next,*m_edit,*m_fastChoice,*m_researchChoice;
     QPushButton *m_back,*m_addRule,*m_editRules,*m_activeFast,*m_activeResearch,*m_fastDecide;
     QToolButton *m_notesToggle,*m_rulesToggle;
     QWidget *m_notesBody,*m_duration,*m_references,*m_activeModes,*m_fastPanel,*m_decisionActions;

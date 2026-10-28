@@ -173,6 +173,11 @@ bool DecisionDialog::validateDraft()
     m_amount->interpretText(); return true;
 }
 
+void DecisionDialog::setInitialText(const QString &text)
+{
+    if (m_stage==0 && !m_hasDraft && m_text->toPlainText().isEmpty()) m_text->setPlainText(text);
+}
+
 void DecisionDialog::setResearchAvailable(bool available)
 {
     m_research->setEnabled(available);

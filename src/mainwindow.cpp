@@ -484,7 +484,10 @@ void MainWindow::buildShell()
 QWidget *MainWindow::buildExecutionPage()
 {
     m_executionWidget=new ExecutionWidget(m_database,m_preferencesPath,m_pages);
-    connect(m_executionWidget,&ExecutionWidget::inputRequested,this,&MainWindow::openDecisionDialog);
+    connect(m_executionWidget,&ExecutionWidget::inputRequested,this,[this](const QString &initialText) {
+        openDecisionDialog();
+        if (auto *dialog=findChild<DecisionDialog *>()) dialog->setInitialText(initialText);
+    });
     connect(m_executionWidget,&ExecutionWidget::wishlistRequested,this,[this] { m_wishlistWidget->refresh(); m_homeWidget->refresh(); showPage(Page::Wishlist); });
     connect(m_executionWidget,&ExecutionWidget::purchaseRequested,this,[this](const Transaction &draft,qint64 sessionId,qint64 brandId) { openTransactionDialog(&draft,true,sessionId,brandId); });
     return m_executionWidget;
