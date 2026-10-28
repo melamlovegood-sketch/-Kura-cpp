@@ -1,4 +1,5 @@
 #include "WorkflowSchema.h"
+#include "CategoryCatalog.h"
 #include "ExecutionRepository.h"
 #include "WorkflowStorage.h"
 #include <QSqlQuery>
@@ -33,14 +34,14 @@ bool WorkflowSchema::validate(const QSqlDatabase &database,QString &error)
         }
         if (!rejectRows("SELECT 1 FROM "+table.name+" WHERE "+invalid.join(" OR ")+" LIMIT 1")) return false;
     }
-    const QString category="('canteen','transport','daily_supplies','subscription','daily','online_shopping','entertainment','other','study')";
+    const QString invalidCategory="NOT "+CategoryCatalog::validSql("detail_category");
     const QStringList checks={
         "SELECT 1 FROM execution_wishes w WHERE id<=0 OR wish_id<=0 OR NOT EXISTS(SELECT 1 FROM execution_sessions e WHERE e.id=w.id) LIMIT 1",
         "SELECT 1 FROM shopping_rules WHERE id<=0 OR length(trim(content)) NOT BETWEEN 1 AND 500 OR sort_order<0 LIMIT 1",
-        "SELECT 1 FROM brands WHERE id<=0 OR length(trim(name)) NOT BETWEEN 1 AND 80 OR length(note)>500 OR weight NOT BETWEEN -100 AND 100 OR active NOT IN (0,1) OR detail_category NOT IN "+category+" LIMIT 1",
-        "SELECT 1 FROM execution_sessions WHERE id<=0 OR length(trim(name)) NOT BETWEEN 1 AND 100 OR detail_category NOT IN "+category+" OR estimated_cents NOT BETWEEN 0 AND 9999999999 OR mode NOT IN ('fast','research') OR duration_seconds NOT BETWEEN 60 AND 7200 OR deadline_ms!=started_ms+duration_seconds*1000 OR started_ms NOT BETWEEN -62135596800000 AND 253402300799999 OR deadline_ms NOT BETWEEN -62135596800000 AND 253402300799999 OR state NOT IN ('active','bought','skipped','undecided') OR length(notes)>4000 OR length(advice)>"+QString::number(ExecutionSession::MaximumAdviceLength)+" OR (state='active' AND (closed_ms IS NOT NULL OR transaction_id IS NOT NULL)) OR (state!='active' AND (closed_ms IS NULL OR closed_ms<started_ms)) OR (state='bought' AND (transaction_id IS NULL OR transaction_id<=0)) OR (state!='bought' AND transaction_id IS NOT NULL) LIMIT 1",
-        "SELECT 1 FROM review_tasks r WHERE id<=0 OR transaction_id<=0 OR length(trim(name)) NOT BETWEEN 1 AND 100 OR amount_cents NOT BETWEEN 1 AND 9999999999 OR detail_category NOT IN "+category+" OR length(brand_name)>80 OR length(note)>500 OR review_day NOT IN (7,30) OR purchased_ms NOT BETWEEN -62135596800000 AND 253402300799999 OR due_ms NOT BETWEEN -62135596800000 AND 253402300799999 OR due_ms!=purchased_ms+review_day*86400000 OR (brand_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM brands b WHERE b.id=r.brand_id)) OR (completed_ms IS NULL AND (frequency IS NOT NULL OR worthiness IS NOT NULL OR NOT EXISTS(SELECT 1 FROM transactions t WHERE t.id=r.transaction_id))) OR (completed_ms IS NOT NULL AND (frequency IS NULL OR frequency NOT IN (0,1,2) OR worthiness IS NULL OR worthiness NOT IN (-1,0,1) OR completed_ms<due_ms OR completed_ms>253402300799999)) LIMIT 1",
-        "SELECT 1 FROM price_tracks WHERE id<=0 OR length(trim(name)) NOT BETWEEN 1 AND 100 OR detail_category NOT IN "+category+" OR (target_cents IS NOT NULL AND target_cents NOT BETWEEN 1 AND 9999999999) OR active NOT IN (0,1) OR length(source_url)>2000 OR created_ms NOT BETWEEN -62135596800000 AND 253402300799999 LIMIT 1",
+        "SELECT 1 FROM brands WHERE id<=0 OR length(trim(name)) NOT BETWEEN 1 AND 80 OR length(note)>500 OR weight NOT BETWEEN -100 AND 100 OR active NOT IN (0,1) OR "+invalidCategory+" LIMIT 1",
+        "SELECT 1 FROM execution_sessions WHERE id<=0 OR length(trim(name)) NOT BETWEEN 1 AND 100 OR "+invalidCategory+" OR estimated_cents NOT BETWEEN 0 AND 9999999999 OR mode NOT IN ('fast','research') OR duration_seconds NOT BETWEEN 60 AND 7200 OR deadline_ms!=started_ms+duration_seconds*1000 OR started_ms NOT BETWEEN -62135596800000 AND 253402300799999 OR deadline_ms NOT BETWEEN -62135596800000 AND 253402300799999 OR state NOT IN ('active','bought','skipped','undecided') OR length(notes)>4000 OR length(advice)>"+QString::number(ExecutionSession::MaximumAdviceLength)+" OR (state='active' AND (closed_ms IS NOT NULL OR transaction_id IS NOT NULL)) OR (state!='active' AND (closed_ms IS NULL OR closed_ms<started_ms)) OR (state='bought' AND (transaction_id IS NULL OR transaction_id<=0)) OR (state!='bought' AND transaction_id IS NOT NULL) LIMIT 1",
+        "SELECT 1 FROM review_tasks r WHERE id<=0 OR transaction_id<=0 OR length(trim(name)) NOT BETWEEN 1 AND 100 OR amount_cents NOT BETWEEN 1 AND 9999999999 OR "+invalidCategory+" OR length(brand_name)>80 OR length(note)>500 OR review_day NOT IN (7,30) OR purchased_ms NOT BETWEEN -62135596800000 AND 253402300799999 OR due_ms NOT BETWEEN -62135596800000 AND 253402300799999 OR due_ms!=purchased_ms+review_day*86400000 OR (brand_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM brands b WHERE b.id=r.brand_id)) OR (completed_ms IS NULL AND (frequency IS NOT NULL OR worthiness IS NOT NULL OR NOT EXISTS(SELECT 1 FROM transactions t WHERE t.id=r.transaction_id))) OR (completed_ms IS NOT NULL AND (frequency IS NULL OR frequency NOT IN (0,1,2) OR worthiness IS NULL OR worthiness NOT IN (-1,0,1) OR completed_ms<due_ms OR completed_ms>253402300799999)) LIMIT 1",
+        "SELECT 1 FROM price_tracks WHERE id<=0 OR length(trim(name)) NOT BETWEEN 1 AND 100 OR "+invalidCategory+" OR (target_cents IS NOT NULL AND target_cents NOT BETWEEN 1 AND 9999999999) OR active NOT IN (0,1) OR length(source_url)>2000 OR created_ms NOT BETWEEN -62135596800000 AND 253402300799999 LIMIT 1",
         "SELECT 1 FROM price_records p WHERE id<=0 OR amount_cents NOT BETWEEN 1 AND 9999999999 OR length(trim(source)) NOT BETWEEN 1 AND 80 OR observed_ms NOT BETWEEN -62135596800000 AND 253402300799999 OR length(request_token) NOT BETWEEN 1 AND 64 OR NOT EXISTS(SELECT 1 FROM price_tracks t WHERE t.id=p.track_id) LIMIT 1",
         "SELECT 1 FROM price_tracks t WHERE NOT EXISTS(SELECT 1 FROM price_records p WHERE p.track_id=t.id) OR (dismissed_target_record_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM price_records p WHERE p.track_id=t.id AND p.id=t.dismissed_target_record_id)) OR (dismissed_drop_record_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM price_records p WHERE p.track_id=t.id AND p.id=t.dismissed_drop_record_id)) LIMIT 1",
         "SELECT 1 FROM review_tasks GROUP BY transaction_id,review_day HAVING COUNT(*)>1",
@@ -48,6 +49,11 @@ bool WorkflowSchema::validate(const QSqlDatabase &database,QString &error)
         "SELECT 1 FROM price_records GROUP BY request_token HAVING COUNT(*)>1"
     };
     for (const auto &sql:checks) if (!rejectRows(sql)) return false;
+    for(const auto &table:{QStringLiteral("brands"),QStringLiteral("execution_sessions"),QStringLiteral("review_tasks"),QStringLiteral("price_tracks")}) {
+        if(!query.exec("SELECT detail_category FROM "+table)){error=query.lastError().text();return false;}
+        while(query.next())if(!CategoryCatalog::isValid(query.value(0).toString())){error=QStringLiteral("备份中的分类无效。");return false;}
+        if(query.lastError().isValid()){error=query.lastError().text();return false;}query.finish();
+    }
     for (const auto &table:{QStringLiteral("brands"),QStringLiteral("price_tracks")}) {
         if (!query.exec("SELECT name,name_key FROM "+table)) { error=query.lastError().text(); return false; }
         while (query.next()) if (WorkflowStorage::nameKey(query.value(0).toString())!=query.value(1).toString()) { error=QStringLiteral("品牌或价格条目的名称索引无效。"); return false; }

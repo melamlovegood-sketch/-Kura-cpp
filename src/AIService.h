@@ -11,13 +11,13 @@
 class QNetworkReply;
 class QJsonArray;
 struct ParsedProduct {
-    QString name, category = QStringLiteral("online_shopping"), note;
+    QString name, category = QStringLiteral("other"), note;
     qint64 amountCents = 0;
     QString purposeCategory, budgetScope;
 };
 Q_DECLARE_METATYPE(ParsedProduct)
 struct ParsedPrice {
-    QString name,category=QStringLiteral("online_shopping"),source,note;
+    QString name,category=QStringLiteral("other"),source,note;
     qint64 amountCents=0;
 };
 Q_DECLARE_METATYPE(ParsedPrice)

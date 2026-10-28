@@ -121,7 +121,7 @@ void WindowTests::saveThenRestart()
         QCOMPARE(table->rowCount(), 2);
         QCOMPARE(table->item(0, 0)->data(Qt::UserRole).toLongLong(), savedId);
         QCOMPARE(table->item(0, 1)->text(), QStringLiteral("午饭"));
-        QCOMPARE(table->item(1, 2)->text(), QStringLiteral("出行"));
+        QCOMPARE(table->item(1, 2)->text(), QStringLiteral("交通"));
         const QString preview = qEnvironmentVariable("KURA_PREVIEW_DIR");
         if (!preview.isEmpty())
             QVERIFY(restarted.grab().save(preview + QStringLiteral("/sqlite-reloaded.png")));
@@ -246,7 +246,7 @@ void WindowTests::refreshFailurePreservesTable()
     QVERIFY(query.exec(QStringLiteral("DROP TABLE transactions")));
     const QString previousSummary = window.findChild<QLabel *>(QStringLiteral("filteredExpenseLabel"))->text();
     const QString previousRange = window.findChild<QLabel *>(QStringLiteral("appliedFilterLabel"))->text();
-    window.findChild<QComboBox *>(QStringLiteral("categoryFilter"))->setCurrentText(QStringLiteral("出行"));
+    window.findChild<QComboBox *>(QStringLiteral("categoryFilter"))->setCurrentText(QStringLiteral("交通"));
     window.findChild<QPushButton *>(QStringLiteral("applyFilterButton"))->click();
     auto *table = window.findChild<QTableWidget *>(QStringLiteral("transactionTable"));
     QCOMPARE(table->rowCount(), 1);
@@ -439,7 +439,7 @@ void WindowTests::filtersAndTotalsUpdate()
     QCOMPARE(filtered->text(), QStringLiteral("当前结果：0 笔 · ¥0.00"));
     QCOMPARE(total->text(), QStringLiteral("全部支出：¥41.50"));
     QVERIFY(window.findChild<QLabel *>(QStringLiteral("emptyHint"))->isVisible());
-    category->setCurrentText(QStringLiteral("出行"));
+    category->setCurrentText(QStringLiteral("交通"));
     apply->click();
     QCOMPARE(table->rowCount(), 1);
     auto *dialog = openDialog(window);

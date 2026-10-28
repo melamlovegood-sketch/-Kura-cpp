@@ -1,3 +1,4 @@
+#include "CategoryWidgets.h"
 #include "EmptyAmountSpinBox.h"
 #include "WishDialog.h"
 #include "WishPrioritySelector.h"
@@ -52,8 +53,8 @@ WishDialog::WishDialog(QWidget *parent) : QDialog(parent)
     auto *more=new QPushButton(QStringLiteral("更多选项"),this); more->setObjectName("wishMoreOptionsButton"); more->setProperty("link",true); more->setCheckable(true); layout->addWidget(more,0,Qt::AlignLeft);
     auto *options=new QWidget(this); options->setObjectName("wishMoreOptions"); auto *optionForm=new QFormLayout(options); optionForm->setContentsMargins(0,0,0,0); optionForm->setSpacing(10);
     m_category=new ModernComboBox(options); m_category->setObjectName("wishCategoryComboBox");
-    for(const auto &key:CategoryCatalog::keys()) m_category->addItem(CategoryCatalog::label(key),key);
-    m_category->setCurrentIndex(m_category->findData("online_shopping"));
+    CategoryWidgets::bind(m_category);
+    CategoryWidgets::select(m_category,"other");
     m_reason=new QLineEdit(options); m_reason->setObjectName("wishReasonEdit"); m_reason->setMaxLength(500); m_reason->setPlaceholderText(QStringLiteral("为什么想买？选填"));
     optionForm->addRow(QStringLiteral("分类"),m_category); optionForm->addRow(QStringLiteral("购买理由"),m_reason);
     options->hide(); layout->addWidget(options);
@@ -81,7 +82,7 @@ WishDialog::WishDialog(const WishItem &wish, QWidget *parent) : WishDialog(paren
     m_save->setText(wish.id>0?QStringLiteral("保存修改"):QStringLiteral("加入清单"));
     m_name->setText(wish.name);
     m_amount->setValue(wish.estimatedCents / 100.0);
-    m_category->setCurrentIndex(m_category->findData(wish.detailCategory.isEmpty()?CategoryCatalog::fromLegacy(wish.category):wish.detailCategory));
+    CategoryWidgets::select(m_category,wish.detailCategory.isEmpty()?CategoryCatalog::fromLegacy(wish.category):wish.detailCategory);
     if (!wish.sourceImage.isEmpty()) qobject_cast<QVBoxLayout *>(layout())->insertWidget(1,screenshotButton(this,wish.sourceImage));
     m_days->setValue(wish.coolingDays);
     if (wish.id>0 && m_priority->button(wish.priority)) m_priority->button(wish.priority)->setChecked(true);
@@ -96,7 +97,8 @@ WishItem WishDialog::item() const
     WishItem wish = m_original;
     wish.name = m_name->text().trimmed();
     wish.estimatedCents = qRound64(m_amount->value() * 100.0);
-    wish.detailCategory=m_category->currentData().toString();
+    const auto selected=m_category->currentData().toString();
+    wish.detailCategory=!m_original.detailCategory.isEmpty() && CategoryCatalog::productKey(m_original.detailCategory)==selected?m_original.detailCategory:selected;
     wish.category = CategoryCatalog::legacyCategory(wish.detailCategory);
     wish.coolingDays = m_days->value();
     wish.priority = m_priority->checkedId();

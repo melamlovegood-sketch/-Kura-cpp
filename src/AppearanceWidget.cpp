@@ -1,3 +1,4 @@
+#include "CategoryWidgets.h"
 #include "AppearanceWidget.h"
 #include "PricePerspectiveWidget.h"
 #include "AISettings.h"
@@ -36,7 +37,7 @@ public:
 };
 }
 
-AppearanceWidget::AppearanceWidget(const QString &settingsPath,QWidget *parent) : QWidget(parent),m_settingsPath(settingsPath),m_connection(this)
+AppearanceWidget::AppearanceWidget(const QString &settingsPath,QWidget *parent,DatabaseManager *database) : QWidget(parent),m_settingsPath(settingsPath),m_connection(this)
 {
     setObjectName(QStringLiteral("appearanceWidget"));
     auto *layout = new QVBoxLayout(this);
@@ -75,6 +76,11 @@ AppearanceWidget::AppearanceWidget(const QString &settingsPath,QWidget *parent) 
     auto *appearanceEntry=entry(preferences,QStringLiteral("外观"),QStringLiteral("主题、字号与动画"),"settingsAppearanceButton",&m_appearanceSummary);
     divider(preferences);
     auto *priceEntry=entry(preferences,QStringLiteral("价格换算"),QStringLiteral("用餐费或工作时间理解价格"),"settingsPricePerspectiveButton",&m_priceSummary);
+    divider(preferences);
+    QLabel *categorySummary=nullptr;
+    auto *categoryEntry=entry(preferences,QStringLiteral("分类管理"),QStringLiteral("默认五类与自己的分类"),"settingsCategoriesButton",&categorySummary);
+    categorySummary->setText(QStringLiteral("默认优先"));
+    connect(categoryEntry,&QPushButton::clicked,this,[this] {showSection(6);});
     auto *services=group(QStringLiteral("服务与数据"));
     auto *aiEntry=entry(services,QStringLiteral("AI 服务"),QStringLiteral("模型配置与连接测试"),"settingsAIButton",&m_serviceSummary);
     divider(services);
@@ -92,6 +98,10 @@ AppearanceWidget::AppearanceWidget(const QString &settingsPath,QWidget *parent) 
     connect(aboutButton,&QPushButton::clicked,this,[this] { showSection(4); });
     connect(feedbackButton,&QPushButton::clicked,this,[this] { showSection(5); });
     layout->addWidget(m_home);
+    auto *categorySettings=new CategorySettingsWidget(database,this);m_categorySection=categorySettings;
+    connect(categorySettings,&CategorySettingsWidget::categoriesChanged,this,&AppearanceWidget::categoriesChanged);
+    layout->addWidget(categorySettings);
+
     QFrame *appearance;
     auto *card = ShellWidgets::card(this, &appearance);
     m_appearanceSection=appearance; appearance->setObjectName("settingsAppearanceSection");
@@ -248,11 +258,11 @@ void AppearanceWidget::reloadOnboardingSettings()
 
 void AppearanceWidget::showSection(int section)
 {
-    m_home->setVisible(section==0); m_appearanceSection->setVisible(section==1); m_aiSection->setVisible(section==2); m_priceSection->setVisible(section==3); m_aboutSection->setVisible(section==4); m_feedbackSection->setVisible(section==5);
+    m_home->setVisible(section==0); m_appearanceSection->setVisible(section==1); m_aiSection->setVisible(section==2); m_priceSection->setVisible(section==3); m_aboutSection->setVisible(section==4); m_feedbackSection->setVisible(section==5); m_categorySection->setVisible(section==6);
     m_key->setEchoMode(QLineEdit::Password); if (auto *toggle=findChild<QPushButton *>("showAIKeyButton")) toggle->setChecked(false);
     refreshSummary();
     m_back->setVisible(section!=0);
-    m_title->setText(section==1?QStringLiteral("外观"):section==2?QStringLiteral("AI 服务"):section==3?QStringLiteral("价格换算"):section==4?QStringLiteral("关于 KURA"):section==5?QStringLiteral("问题反馈"):QStringLiteral("设置"));
+    m_title->setText(section==1?QStringLiteral("外观"):section==2?QStringLiteral("AI 服务"):section==3?QStringLiteral("价格换算"):section==4?QStringLiteral("关于 KURA"):section==5?QStringLiteral("问题反馈"):section==6?QStringLiteral("分类管理"):QStringLiteral("设置"));
     updateGeometry();
 }
 

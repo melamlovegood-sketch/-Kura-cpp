@@ -1,3 +1,4 @@
+#include "CategoryWidgets.h"
 #include "EmptyAmountSpinBox.h"
 #include "ModernSelectors.h"
 #include "PriceRecordDialog.h"
@@ -33,6 +34,7 @@ PriceRecordDialog::PriceRecordDialog(DatabaseManager &database,const PriceTrack 
       m_settingsPath(database.databasePath()==QStringLiteral(":memory:")?QString():database.databasePath()+QStringLiteral(".ui.ini")),
       m_token(QUuid::createUuid().toString(QUuid::Id128)),m_trackName(track?track->name:QString()),m_trackId(track?track->id:0),m_wishId(wishId)
 {
+    setProperty("categoryDatabase",database.connectionName());
     setObjectName("priceRecordDialog"); setWindowTitle(wishId?QStringLiteral("记录商品价格"):track?QStringLiteral("追加价格记录"):QStringLiteral("记录价格"));
     setAcceptDrops(true); resize(590,670); setMinimumSize(450,400);
     new ScreenshotDropTarget(this,[this] { return !m_service.busy() && !m_saved; },
@@ -56,8 +58,8 @@ PriceRecordDialog::PriceRecordDialog(DatabaseManager &database,const PriceTrack 
     m_aiNote=ShellWidgets::label(QString(),content,"muted"); m_aiNote->setObjectName("priceAIResultLabel"); m_aiNote->setTextFormat(Qt::PlainText); m_aiNote->hide(); body->addWidget(m_aiNote);
     m_form=new QWidget(content); auto *form=new QFormLayout(m_form); form->setContentsMargins(0,0,0,0); form->setSpacing(10);
     m_name=new QLineEdit(m_trackName,m_form); m_name->setObjectName("priceNameEdit"); m_name->setMaxLength(100); m_name->setReadOnly(track);
-    m_category=new ModernComboBox(m_form); m_category->setObjectName("priceCategoryComboBox"); for (const auto &key:CategoryCatalog::keys()) m_category->addItem(CategoryCatalog::label(key),key);
-    m_category->setCurrentIndex(m_category->findData(track?track->category:QStringLiteral("online_shopping"))); m_category->setEnabled(!track);
+    m_category=new ModernComboBox(m_form); m_category->setObjectName("priceCategoryComboBox"); CategoryWidgets::bind(m_category);
+    CategoryWidgets::select(m_category,track?track->category:QStringLiteral("other")); m_category->setEnabled(!track);
     m_amount=new EmptyAmountSpinBox(m_form,QStringLiteral("请填写价格（元）")); m_amount->setObjectName("priceAmountSpinBox"); m_amount->setRange(0,99999999.99); m_amount->setDecimals(2);
     m_source=new QLineEdit(QStringLiteral("手动记录"),m_form); m_source->setObjectName("priceSourceEdit"); m_source->setMaxLength(80); m_source->setPlaceholderText(QStringLiteral("如：淘宝 · M 码 · 券后价"));
     m_time=new QDateTimeEdit(QDateTime::currentDateTime(),m_form); m_time->setObjectName("priceObservedTimeEdit"); m_time->setDisplayFormat("yyyy-MM-dd HH:mm:ss"); m_time->setCalendarPopup(true); m_time->setDateTimeRange(QDateTime(QDate(1,1,1),QTime(0,0)),QDateTime::currentDateTime().addSecs(60));
@@ -95,7 +97,7 @@ PriceRecordDialog::PriceRecordDialog(DatabaseManager &database,const PriceTrack 
     connect(&m_service,&AIService::failed,this,[this](const QString &message) { m_aiFailed=true; setBusy(false); m_status->setText(QStringLiteral("识别未完成，已保留填写内容，可重试或手动填写。")); showError(message); });
     connect(&m_service,&AIService::priceParsed,this,[this](const ParsedPrice &price) {
         m_aiDraft=true;
-        if (!m_trackId && !m_wishId) { m_name->setText(price.name); m_category->setCurrentIndex(m_category->findData(price.category)); }
+        if (!m_trackId && !m_wishId) { m_name->setText(price.name); CategoryWidgets::select(m_category,price.category); }
         m_amount->setValue(double(price.amountCents)/100);
         m_source->setText(price.source.isEmpty()?QStringLiteral("截图识别确认"):price.source+QStringLiteral(" · 截图确认"));
         m_aiNote->setText(QStringLiteral("截图商品：%1\n%2").arg(price.name.isEmpty()?QStringLiteral("名称未识别"):price.name,price.note)); m_aiNote->show();

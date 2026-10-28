@@ -3,6 +3,7 @@
 #include "AIService.h"
 #include <QElapsedTimer>
 class QPushButton;
+class DatabaseManager;
 class QLineEdit;
 class QLabel;
 class QComboBox;
@@ -12,13 +13,14 @@ class AppearanceWidget : public QWidget
 {
     Q_OBJECT
 public:
-    explicit AppearanceWidget(const QString &settingsPath = {}, QWidget *parent = nullptr);
+    explicit AppearanceWidget(const QString &settingsPath = {}, QWidget *parent = nullptr,DatabaseManager *database=nullptr);
     void setTheme(const QString &theme);
     void setBackupSummary(const QString &summary);
     void refreshSummary();
     void reloadOnboardingSettings();
     void showHome();
 signals:
+    void categoriesChanged(const QString &oldKey,const QString &newKey);
     void themeSelected(const QString &theme);
     void dataRequested();
     void onboardingRequested();
@@ -28,7 +30,7 @@ protected:
     void showEvent(QShowEvent *event) override;
 private:
     void showSection(int section);
-    QWidget *m_home,*m_appearanceSection,*m_aiSection,*m_priceSection,*m_aboutSection,*m_feedbackSection;
+    QWidget *m_home,*m_appearanceSection,*m_aiSection,*m_priceSection,*m_aboutSection,*m_feedbackSection,*m_categorySection;
     QLabel *m_title;
     QPushButton *m_back;
     QList<QPushButton *> m_choices;

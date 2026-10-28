@@ -1,5 +1,6 @@
 #include "BillImportRepository.h"
 #include "CategoryCatalog.h"
+#include "CategoryRepository.h"
 #include "TransactionRepository.h"
 #include "WorkflowStorage.h"
 #include <QHash>
@@ -44,6 +45,16 @@ bool BillImportRepository::commit(const BillParseResult &preview,BillImportOutco
         const auto error=Transaction(0,row.name,row.cents,CategoryCatalog::legacyCategory(row.category),row.date,row.time,row.note,row.category,{},row.purposeCategory,row.budgetScope).validationError(); if (!error.isEmpty()) { m_error=QStringLiteral("第 %1 行：%2").arg(row.sourceRow).arg(error); return false; }
     }
     WorkflowStorage::Transaction batch(m_database.database(),m_error); if (!batch.ok()) return false;
+    CategoryRepository categories(m_database.database());QList<UserCategory> known;
+    if(!categories.load(known,true)){m_error=categories.lastError();return false;}
+    QSet<QString> knownKeys;for(const auto &category:known)knownKeys.insert(category.key);
+    for(const auto &row:preview.rows)if(row.selected)for(const auto &key:{row.category,row.purposeCategory}) {
+        if(CategoryCatalog::isCustom(key) && !knownKeys.contains(key)) {
+            if(!categories.add(CategoryCatalog::label(key))){m_error=categories.lastError();return false;}
+            knownKeys.insert(key);
+        }
+    }
+
     QSqlQuery query(m_database.database()); TransactionRepository expenses(m_database);
     for (const auto &row:preview.rows) if (row.selected) {
         query.prepare("SELECT payload_hash FROM bill_import_keys WHERE import_key=:key"); query.bindValue(":key",row.key);

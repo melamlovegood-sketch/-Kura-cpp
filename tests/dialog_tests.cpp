@@ -178,11 +178,10 @@ void DialogTests::wishValidationPresetsAndKeyboard()
     auto *category=dialog.findChild<ModernComboBox *>("wishCategoryComboBox"); QVERIFY(category);
     category->showPopup(); settle(); auto *popup=category->findChild<QFrame *>("modernComboPopup"); QVERIFY(popup && popup->isVisible());
     popup->findChild<QPushButton *>("chooseOption4")->click(); settle(); QCOMPARE(category->currentIndex(),4);
-    category->showPopup(); settle();
-    auto *search=category->findChild<QLineEdit *>("selectorSearchEdit"); QVERIFY(search);
-    search->setText(QStringLiteral("学习")); settle();
-    QTest::keyClick(search,Qt::Key_Down); QTest::keyClick(QApplication::focusWidget(),Qt::Key_Return); settle();
-    QCOMPARE(category->currentData().toString(),QStringLiteral("study"));
+    category->showPopup(); settle();popup=category->findChild<QFrame *>("modernComboPopup");QVERIFY(popup);
+    QVERIFY(!popup->findChild<QLineEdit *>("selectorSearchEdit")); // Five defaults fit without a search box.
+    QTest::keyClick(popup->findChild<QPushButton *>("chooseOption3"),Qt::Key_Return);settle();
+    QCOMPARE(category->currentData().toString(),QStringLiteral("travel"));
     save->click(); QCOMPARE(requested.count(),1); QVERIFY(!save->isEnabled());
     dialog.showSaveError(QStringLiteral("数据库暂时被占用，请重试。")); QVERIFY(save->isEnabled()); QCOMPARE(name->text(),QStringLiteral("一双球鞋"));
     dialog.completeSave(); settle(); QVERIFY(!dialog.isVisible());

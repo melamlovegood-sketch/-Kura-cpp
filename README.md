@@ -1,8 +1,10 @@
 # Kura · 理性消费与记账助手
 
+当前统一版本 **0.17.0**：默认五类统一、自定义分类管理及执行页入口精简，详见 [分类管理](docs/CATEGORIES.md)。
+
 基于 **C++17 / Qt 6 / SQLite** 的 Windows 桌面课程项目。把记账、预算、购买前思考、愿望冷静期与月度复盘放在一起，帮助使用者看清消费，也给冲动购买留一点思考时间。
 
-最近已验收基线：**0.16.6**。开发中的源码版本以 [CMakeLists.txt](CMakeLists.txt) 为准，功能与版本变化见 [版本统一记录](docs/VERSION_UNIFICATION.md)。只有通过统一构建与回归的产物才作为最新版分发。
+最近已验收基线：**0.17.0**。开发中的源码版本以 [CMakeLists.txt](CMakeLists.txt) 为准，功能与版本变化见 [版本统一记录](docs/VERSION_UNIFICATION.md)。只有通过统一构建与回归的产物才作为最新版分发。
 
 **[使用说明](docs/USER_GUIDE.md) · [课堂演示](docs/DEMO_PERSONAS.md) · [文档索引](docs/README.md) · [开发协作](CONTRIBUTING.md) · [构建与发布](docs/RELEASE.md)**
 

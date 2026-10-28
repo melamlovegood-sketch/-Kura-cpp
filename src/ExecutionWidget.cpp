@@ -1,3 +1,4 @@
+#include "CategoryWidgets.h"
 #include "EmptyAmountSpinBox.h"
 #include "ModernSelectors.h"
 #include "ExecutionWidget.h"
@@ -99,6 +100,7 @@ QVBoxLayout *disclosure(QVBoxLayout *layout,QWidget *parent,const QString &title
 ExecutionWidget::ExecutionWidget(DatabaseManager &database,const QString &settingsPath,QWidget *parent)
     :QWidget(parent),m_database(database),m_repository(database),m_profile(database),m_advisor(this),m_settingsPath(settingsPath)
 {
+    setProperty("categoryDatabase",database.connectionName());
     setObjectName("executionWidget");
     auto *layout=new QVBoxLayout(this); ShellWidgets::pageLayout(layout);
     auto *heading=new QHBoxLayout;
@@ -135,7 +137,6 @@ ExecutionWidget::ExecutionWidget(DatabaseManager &database,const QString &settin
     }
     suggestions->addStretch(); inputLayout->addWidget(m_suggestions);
     m_next=new QPushButton(QStringLiteral("生成决策简报  →"),inputCard); m_next->setObjectName("executionNextButton"); m_next->setProperty("primary",true); inputLayout->addWidget(m_next);
-    m_input=new QPushButton(QStringLiteral("用文字或截图核对商品 →"),inputCard); m_input->setObjectName("executionInputButton"); m_input->setProperty("executionQuiet",true); inputLayout->addWidget(m_input,0,Qt::AlignLeft);
     entryLayout->addWidget(inputCard);
     m_pending=new QWidget(entryPage); m_pending->setObjectName("executionPendingSection");
     auto *pendingLayout=new QVBoxLayout(m_pending); pendingLayout->setContentsMargins(4,0,4,0); pendingLayout->setSpacing(0);
@@ -175,8 +176,8 @@ ExecutionWidget::ExecutionWidget(DatabaseManager &database,const QString &settin
     m_amount->setButtonSymbols(QAbstractSpinBox::NoButtons);
     m_purpose=new QLineEdit(briefCard); m_purpose->setObjectName("executionPurposeEdit"); m_purpose->setMaxLength(500); m_purpose->setPlaceholderText(QStringLiteral("买来主要做什么？"));
     m_category=new ModernComboBox(briefCard); m_category->setObjectName("executionCategoryComboBox");
-    for (const auto &key:CategoryCatalog::keys()) m_category->addItem(CategoryCatalog::label(key),key);
-    m_category->setCurrentIndex(m_category->findData("online_shopping"));
+    CategoryWidgets::bind(m_category);
+    CategoryWidgets::select(m_category,"other");
     form->addRow(QStringLiteral("预计金额（元）"),m_amount); form->addRow(QStringLiteral("主要用途"),m_purpose); form->addRow(QStringLiteral("品类"),m_category); extraLayout->addLayout(form);
     m_productDetails=new QPushButton(QStringLiteral("商品详情与材质 →"),briefCard); m_productDetails->setObjectName("executionProductDetailsButton"); m_productDetails->setProperty("executionQuiet",true); briefLayout->addWidget(m_productDetails,0,Qt::AlignLeft);
     connect(m_productDetails,&QPushButton::clicked,this,&ExecutionWidget::openProductDetails);
@@ -290,7 +291,6 @@ ExecutionWidget::ExecutionWidget(DatabaseManager &database,const QString &settin
     endings->addStretch(); endings->addWidget(m_undecided); layout->addLayout(endings);
     m_error=ShellWidgets::label(QString(),this,"error"); m_error->setObjectName("executionStatusLabel"); m_error->hide(); layout->addWidget(m_error); layout->addStretch(1);
 
-    connect(m_input,&QPushButton::clicked,this,[this] { emit inputRequested(m_name->text().trimmed()); });
     connect(m_next,&QPushButton::clicked,this,[this] { goToStep(1); });
     connect(m_name,&QLineEdit::returnPressed,m_next,&QPushButton::click);
     connect(m_reviewName,&QLineEdit::returnPressed,this,[this] { goToStep(1); });
@@ -349,7 +349,7 @@ bool ExecutionWidget::prepareDecision(const ParsedProduct &product,const QByteAr
     if (!m_repository.loadActive(active) || active.id) return false;
     m_loading=true; m_draftWishId=0; m_draftProductId=productId; m_draftImage=image;
     m_name->setText(product.name); m_amount->setValue(double(product.amountCents)/100);
-    m_category->setCurrentIndex(qMax(0,m_category->findData(product.category))); m_purpose->setText(product.note);
+    CategoryWidgets::select(m_category,product.category); m_purpose->setText(product.note);
     m_loading=false;
     if (!refreshReferences()) return false;
     m_mode->setCurrentIndex(m_mode->findData(suggestedMode(product.name,product.amountCents)));
@@ -406,7 +406,7 @@ bool ExecutionWidget::reloadState()
     m_loading=true; m_completionText.clear(); m_session=session; m_quickReady=false; m_draftWishId=session.wishId; m_draftProductId=0; m_draftImage.clear();
     m_name->setText(session.id?session.name:QString()); m_amount->setValue(double(session.estimatedCents)/100);
     m_purpose->clear(); m_notes->clear(); for (auto *check:m_checks) check->setChecked(false);
-    if (session.id) { m_category->setCurrentIndex(m_category->findData(session.category)); m_mode->setCurrentIndex(m_mode->findData(session.mode)); m_minutes->setValue(session.durationSeconds/60); }
+    if (session.id) { CategoryWidgets::select(m_category,session.category); m_mode->setCurrentIndex(m_mode->findData(session.mode)); m_minutes->setValue(session.durationSeconds/60); }
     else m_mode->setCurrentIndex(m_mode->findData("research"));
     const auto notes=QJsonDocument::fromJson(session.notes.toUtf8());
     if (notes.isObject()) {
@@ -539,7 +539,7 @@ void ExecutionWidget::updateControls()
     m_back->setEnabled(m_available); m_addRule->setEnabled(m_available); m_editRules->setEnabled(m_available); m_rulesToggle->setEnabled(m_available);
     m_activeFast->setEnabled(m_available && !m_aiBusy); m_activeResearch->setEnabled(m_available && !m_aiBusy);
     m_activeFast->setChecked(!research); m_activeResearch->setChecked(research);
-    m_input->setEnabled(m_available); m_edit->setEnabled(m_available && !m_aiBusy);
+    m_edit->setEnabled(m_available && !m_aiBusy);
     m_buy->setEnabled(m_available && !m_aiBusy); m_wish->setEnabled(m_available && !m_aiBusy);
     m_wish->setText(m_draftWishId?QStringLiteral("继续等等"):QStringLiteral("加入清单，稍后再想"));
     m_skip->setEnabled(m_available && active); m_undecided->setEnabled(m_available && active);

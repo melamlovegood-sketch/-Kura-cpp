@@ -1,5 +1,6 @@
 #include "SupplementSchema.h"
 #include "AchievementRepository.h"
+#include "CategoryRepository.h"
 #include <QDate>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -11,6 +12,7 @@
 QList<WorkflowTable> SupplementSchema::tables()
 {
     return {
+        {"user_categories","CREATE TABLE IF NOT EXISTS user_categories(id INTEGER PRIMARY KEY AUTOINCREMENT,category_key TEXT NOT NULL UNIQUE,name TEXT NOT NULL,active INTEGER NOT NULL CHECK(active IN (0,1)))",{"id","category_key","name","active"},{"id","active"},{}},
         {"achievement_marks","CREATE TABLE IF NOT EXISTS achievement_marks(id INTEGER PRIMARY KEY AUTOINCREMENT,badge_key TEXT NOT NULL,fact_key TEXT NOT NULL,observed_ms INTEGER NOT NULL,UNIQUE(badge_key,fact_key))",{"id","badge_key","fact_key","observed_ms"},{"id","observed_ms"},{}},
         {"bill_import_keys","CREATE TABLE IF NOT EXISTS bill_import_keys(id INTEGER PRIMARY KEY AUTOINCREMENT,import_key TEXT NOT NULL UNIQUE,payload_hash TEXT NOT NULL,fingerprint TEXT NOT NULL,platform TEXT NOT NULL,external_id TEXT NOT NULL,file_hash TEXT NOT NULL,source_file TEXT NOT NULL,original_name TEXT NOT NULL,transaction_id INTEGER,imported_ms INTEGER NOT NULL)",{"id","import_key","payload_hash","fingerprint","platform","external_id","file_hash","source_file","original_name","transaction_id","imported_ms"},{"id","transaction_id","imported_ms"},{"transaction_id"}},
         {"transaction_reviews","CREATE TABLE IF NOT EXISTS transaction_reviews(id INTEGER PRIMARY KEY AUTOINCREMENT,transaction_id INTEGER NOT NULL UNIQUE,tag INTEGER NOT NULL CHECK(tag IN (-1,1)),note TEXT NOT NULL DEFAULT '',updated_ms INTEGER NOT NULL)",{"id","transaction_id","tag","note","updated_ms"},{"id","transaction_id","tag","updated_ms"},{}},
@@ -20,6 +22,9 @@ QList<WorkflowTable> SupplementSchema::tables()
 bool SupplementSchema::validate(const QSqlDatabase &database,QString &error)
 {
     QSqlQuery query(database);
+    QList<UserCategory> categories; CategoryRepository categoryRepository(database);
+    if(!categoryRepository.load(categories,true)) {error=categoryRepository.lastError();return false;}
+    for(const auto &category:categories) if(category.name.size()>20) {error=QStringLiteral("备份中的分类名称无效。");return false;}
     const auto reject=[&](const QString &sql) { if (!query.exec(sql) || query.next() || query.lastError().isValid()) { error=QStringLiteral("备份中的导入记录、月度标记或故事数据无效。"); query.finish(); return false; } query.finish(); return true; };
     for (const auto &table:tables()) { QStringList invalid; for (const auto &column:table.columns) { const auto check="typeof("+column+")!='"+(table.integers.contains(column)?QStringLiteral("integer"):QStringLiteral("text"))+"'"; invalid << (table.nullable.contains(column)?"("+column+" IS NOT NULL AND "+check+")":check); } if (!reject("SELECT 1 FROM "+table.name+" WHERE "+invalid.join(" OR ")+" LIMIT 1")) return false; }
     const QStringList checks={

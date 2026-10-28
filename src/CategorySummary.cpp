@@ -53,12 +53,15 @@ QList<CategoryExpense> CategorySummary::calculate(const QList<Transaction> &tran
 
 QList<CategoryExpense> CategorySummary::calculatePurposes(const QList<Transaction> &transactions,const QDate &month) {
     QList<CategoryExpense> result;
-    for (const auto &key:CategoryCatalog::purposeKeys()) result.append({CategoryCatalog::purposeLabel(key),0});
+    auto keys=CategoryCatalog::defaultKeys();QStringList custom;
+    for(const auto &record:transactions) if(CategoryCatalog::isCustom(record.purposeCategory()) && !custom.contains(record.purposeCategory()))custom<<record.purposeCategory();
+    custom.sort();keys.append(custom);keys<<"unclassified";
+    for (const auto &key:keys) result.append({CategoryCatalog::purposeLabel(key),0});
     if (!month.isValid()) return result;
     const QDate first(month.year(),month.month(),1),previous=first.addMonths(-1); qint64 total=0;
     for (const auto &record:transactions) {
         const QDate period(record.date().year(),record.date().month(),1); if (period!=first && period!=previous) continue;
-        const int index=CategoryCatalog::purposeKeys().indexOf(record.purposeCategory()); if (index<0) continue; auto &entry=result[index];
+        const int index=keys.indexOf(record.purposeCategory()); if (index<0) continue; auto &entry=result[index];
         if (period==first) { entry.amountCents+=record.amountCents(); ++entry.transactionCount; total+=record.amountCents(); }
         else entry.previousMonthAmountCents+=record.amountCents();
     }

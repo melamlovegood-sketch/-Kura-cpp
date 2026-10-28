@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(KuraCpp VERSION 0.16.6 LANGUAGES CXX)
+project(KuraCpp VERSION 0.17.0 LANGUAGES CXX)
 string(TIMESTAMP KURA_BUILD_DATE "%Y-%m-%d")
 configure_file(src/BuildInfo.h.in generated/BuildInfo.h @ONLY)
 
@@ -35,6 +35,7 @@ add_library(kura_core STATIC
     src/DemoData.cpp src/DemoData.h
     src/DemoPersonas.cpp src/DemoPersonas.h
     src/CategoryCatalog.cpp src/CategoryCatalog.h
+    src/CategoryRepository.cpp src/CategoryRepository.h
     src/PricePerspective.cpp src/PricePerspective.h
     src/DecisionSchema.cpp src/DecisionSchema.h
     src/WishPoolRepository.cpp src/WishPoolRepository.h
@@ -62,6 +63,7 @@ if(WIN32)
 endif()
 
 add_library(kura_widgets STATIC
+    src/CategoryWidgets.cpp src/CategoryWidgets.h
     src/AchievementCelebration.cpp src/AchievementCelebration.h src/AchievementArt.h
     src/EmptyAmountSpinBox.h
     src/DemoMode.cpp src/DemoMode.h
@@ -120,6 +122,10 @@ target_link_libraries(KuraCpp PRIVATE kura_widgets)
 include(CTest)
 if(BUILD_TESTING)
     find_package(Qt6 REQUIRED COMPONENTS Test)
+    add_executable(category_management_tests tests/category_management_tests.cpp)
+    target_link_libraries(category_management_tests PRIVATE kura_widgets Qt6::Test)
+    add_test(NAME category_management_tests COMMAND category_management_tests)
+    set_tests_properties(category_management_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_executable(onboarding_tests tests/onboarding_tests.cpp)
     target_link_libraries(onboarding_tests PRIVATE kura_widgets Qt6::Test)
     add_test(NAME onboarding_tests COMMAND onboarding_tests)

@@ -65,7 +65,7 @@ private slots:
     void editsAndNotesSurviveRestart();
     void wishlistCancelAndSave();
     void wishlistCommitIsAtomic();
-    void missingAndBasicBudgetsAndSmallWindow();
+    void missingAndPurposeIndependentBudgetsAndSmallWindow();
     void productOnlyEntryAndPrinciples();
     void modesSwitchWithoutRestartingSession();
     void expiredTimerNeverBuysAutomatically();
@@ -384,10 +384,8 @@ void ExecutionUiTests::focusedInputSurvivesPurchaseFlowAndKeepsSharedEntry()
     QCOMPARE(reviewName->text(),name->text()); reviewName->setText(QStringLiteral("通勤耳机"));
     field<QPushButton>(window,"executionBackButton")->click(); settle();
     QVERIFY(name->isVisible()); QCOMPARE(name->text(),QStringLiteral("通勤耳机"));
-    field<QPushButton>(window,"executionInputButton")->click(); settle();
-    auto *dialog=window.findChild<DecisionDialog *>(); QVERIFY(dialog && dialog->isVisible());
-    QCOMPARE(field<QPlainTextEdit>(*dialog,"decisionInput")->toPlainText(),QStringLiteral("通勤耳机"));
-    dialog->reject(); settle();
+    QVERIFY(!window.findChild<QPushButton *>("executionInputButton"));
+    QVERIFY(!window.findChild<DecisionDialog *>());
     QCOMPARE(name->text(),QStringLiteral("通勤耳机"));
     QCOMPARE(count(db,"execution_sessions"),0); QCOMPARE(count(db,"transactions"),0);
 }
@@ -399,7 +397,7 @@ void ExecutionUiTests::stepsAndRealBudget()
     MainWindow window(path); window.resize(1440,1040); window.show(); window.showPage(MainWindow::Page::Execution); settle();
     auto *steps=field<QWidget>(window,"executionSteps"); QVERIFY(field<QWidget>(window,"executionInputCard")->isVisible());
     QVERIFY(!window.findChild<QPushButton *>("executionStep0Button"));
-    QVERIFY(field<QPushButton>(window,"executionInputButton")->isEnabled());
+    QVERIFY(!window.findChild<QPushButton *>("executionInputButton"));
     QVERIFY(field<QLabel>(window,"executionRulesLabel")->isVisible());
     QVERIFY(!field<QDoubleSpinBox>(window,"executionEstimatedAmountSpinBox")->isVisible());
     QVERIFY(!field<QLabel>(window,"executionTimerLabel")->isVisible());
@@ -487,7 +485,7 @@ void ExecutionUiTests::wishlistCommitIsAtomic()
     QVERIFY(!executions.updateProduct(session.id,"changed","online_shopping",100));
 }
 
-void ExecutionUiTests::missingAndBasicBudgetsAndSmallWindow()
+void ExecutionUiTests::missingAndPurposeIndependentBudgetsAndSmallWindow()
 {
     QTemporaryDir dir; const auto path=dir.filePath("small.sqlite"); DatabaseManager db(path); QVERIFY(db.initialize());
     MainWindow window(path); window.resize(1180,900); window.show(); window.showPage(MainWindow::Page::Execution); fill(window); start(window);
@@ -495,10 +493,11 @@ void ExecutionUiTests::missingAndBasicBudgetsAndSmallWindow()
     QVERIFY(field<QLabel>(window,"executionBudgetTitleLabel")->text().contains(QStringLiteral("尚未设置")));
     BudgetRepository budgets(db); QVERIFY(budgets.saveSplit(QDate::currentDate(),50000,100000));
     field<QPushButton>(window,"executionEditProductButton")->click();
-    auto *category=field<QComboBox>(window,"executionCategoryComboBox"); category->setCurrentIndex(category->findData("canteen"));
+    auto *category=field<QComboBox>(window,"executionCategoryComboBox"); category->setCurrentIndex(category->findData("food"));
     field<QDoubleSpinBox>(window,"executionEstimatedAmountSpinBox")->setValue(20); start(window);
     auto *execution=field<ExecutionWidget>(window,"executionWidget"); QVERIFY(execution->refreshReferences());
-    QCOMPARE(field<QLabel>(window,"executionBudgetAfterLabel")->text(),QStringLiteral("¥480.00"));
+    // A food purpose alone does not assign spending to the necessary-life budget.
+    QCOMPARE(field<QLabel>(window,"executionBudgetAfterLabel")->text(),QStringLiteral("¥980.00"));
     for (const auto &theme:{QStringLiteral("warm"),QStringLiteral("cool"),QStringLiteral("dark")}) {
         AppTheme::apply(&window,theme); window.resize(800,600); settle();
         for (auto *scroll:window.findChildren<QScrollArea *>()) if (scroll->isVisible()) QCOMPARE(scroll->horizontalScrollBar()->maximum(),0);
@@ -513,7 +512,7 @@ void ExecutionUiTests::productOnlyEntryAndPrinciples()
     MainWindow window(path); window.resize(1180,860); window.show(); window.showPage(MainWindow::Page::Execution); settle();
     QCOMPARE(field<QLabel>(window,"executionHeading")->text(),QStringLiteral("执行"));
     auto *name=field<QLineEdit>(window,"executionNameEdit"); name->setText(QStringLiteral("   "));
-    QVERIFY(field<QPushButton>(window,"executionInputButton")->isEnabled());
+    QVERIFY(!window.findChild<QPushButton *>("executionInputButton"));
     field<QPushButton>(window,"executionAddRuleButton")->click(); settle(); auto *editor=field<QDialog>(window,"executionRulesEditor");
     field<QPlainTextEdit>(*editor,"executionRuleEditorText")->setPlainText(QStringLiteral("用途不明确，先不买。"));
     field<QPushButton>(*editor,"executionSaveRuleButton")->click(); settle();

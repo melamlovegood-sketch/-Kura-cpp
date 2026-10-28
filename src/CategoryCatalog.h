@@ -3,6 +3,11 @@
 #include <QStringList>
 namespace CategoryCatalog {
 QStringList keys();
+QStringList defaultKeys();
+QString productKey(const QString &key);
+bool isCustom(const QString &key);
+QString customKey(const QString &name);
+QString validSql(const QString &column, bool purpose=false);
 QString label(const QString &key);
 QString legacyCategory(const QString &key);
 QString fromLegacy(const QString &category);

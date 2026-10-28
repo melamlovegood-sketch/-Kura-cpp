@@ -1,6 +1,6 @@
 # 文档索引
 
-最近已验收基线为 **0.16.6**，开发中的源码版本见 [CMakeLists.txt](../CMakeLists.txt)。先阅读 [项目首页](../README.md)，具体功能以 [版本统一记录](VERSION_UNIFICATION.md)、当前源码和测试为准；历史文档中的旧版本号不代表最新版。
+最近已验收基线为 **0.17.0**，开发中的源码版本见 [CMakeLists.txt](../CMakeLists.txt)。先阅读 [项目首页](../README.md)，具体功能以 [版本统一记录](VERSION_UNIFICATION.md)、当前源码和测试为准；历史文档中的旧版本号不代表最新版。
 
 ## 使用、演示与验收
 

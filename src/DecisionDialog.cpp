@@ -1,3 +1,4 @@
+#include "CategoryWidgets.h"
 #include "EmptyAmountSpinBox.h"
 #include "ModernSelectors.h"
 #include "DecisionDialog.h"
@@ -36,6 +37,7 @@
 DecisionDialog::DecisionDialog(DatabaseManager &database, const AISettings &settings, QWidget *parent)
     :QDialog(parent),m_database(database),m_settings(settings),m_service(this),m_token(QUuid::createUuid().toString(QUuid::Id128))
 {
+    setProperty("categoryDatabase",database.connectionName());
     setObjectName(QStringLiteral("decisionDialog")); setWindowTitle(QStringLiteral("我现在想买……"));
     setProperty("dialogFixedViewport",true); setAcceptDrops(true); resize(600,610); setMinimumSize(380,400);
     new ScreenshotDropTarget(this,[this] { return m_stage==0 && !m_service.busy() && !m_saved; },
@@ -66,7 +68,7 @@ DecisionDialog::DecisionDialog(DatabaseManager &database, const AISettings &sett
     m_name=new QLineEdit(draft); m_name->setObjectName("decisionNameEdit"); m_name->setMaxLength(100);
     m_amount=new EmptyAmountSpinBox(draft,QStringLiteral("待确认（元）")); m_amount->setObjectName("decisionAmountSpinBox"); m_amount->setDecimals(2); m_amount->setRange(0,99999999.99);
     m_category=new ModernComboBox(draft); m_category->setObjectName("decisionCategoryComboBox");
-    for (const auto &key:CategoryCatalog::keys()) m_category->addItem(CategoryCatalog::label(key),key);
+    CategoryWidgets::bind(m_category);
     form->addRow(QStringLiteral("商品名称"),m_name); form->addRow(QStringLiteral("金额（元）"),m_amount); form->addRow(QStringLiteral("分类"),m_category); draftLayout->addLayout(form);
     auto *costHint=new PricePerspectiveHint(PricePerspectiveStore::settingsPath(database.databasePath()),draft); costHint->setObjectName("decisionCostHintLabel"); draftLayout->addWidget(costHint);
     connect(m_amount,&QDoubleSpinBox::valueChanged,costHint,[costHint](double amount) { costHint->setAmount(qRound64(amount*100)); });
@@ -227,7 +229,7 @@ void DecisionDialog::showDraft(const ParsedProduct &product)
 {
     m_hasDraft=true;
     m_name->setText(product.name); m_amount->setValue(double(product.amountCents)/100);
-    m_category->setCurrentIndex(qMax(0,m_category->findData(product.category))); m_note->setPlainText(product.note);
+    CategoryWidgets::select(m_category,product.category); m_note->setPlainText(product.note);
     m_purposeCategory=product.purposeCategory.isEmpty()?CategoryCatalog::purposeFromDetail(product.category):product.purposeCategory;
     m_budgetScope=product.budgetScope.isEmpty()?(CategoryCatalog::isBasic(product.category)?"basic":"discretionary"):product.budgetScope;
     m_choice.clear(); m_wishlistOptions->hide();

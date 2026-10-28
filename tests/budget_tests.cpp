@@ -277,7 +277,7 @@ void BudgetTests::widgetCrudAndRestart()
             QVERIFY(window.grab().save(preview + QStringLiteral("/budget-overspent.png")));
         }
         auto *category = window.findChild<QComboBox *>(QStringLiteral("categoryFilter"));
-        category->setCurrentText(QStringLiteral("出行"));
+        category->setCurrentText(QStringLiteral("交通"));
         window.findChild<QPushButton *>(QStringLiteral("applyFilterButton"))->click();
         QCOMPARE(window.findChild<QTableWidget *>(QStringLiteral("transactionTable"))->rowCount(), 0);
         QCOMPARE(spent->text(), QStringLiteral("已消费：¥125.00")); // Filtering never changes budget scope.

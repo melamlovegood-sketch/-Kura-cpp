@@ -15,6 +15,7 @@ public:
     bool initialize();
     QSqlDatabase database() const;
     QString databasePath() const;
+    QString connectionName() const { return m_connectionName; }
     QString lastError() const;
     static QString defaultDatabasePath();
 

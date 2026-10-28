@@ -1,3 +1,4 @@
+#include "CategoryWidgets.h"
 #include "ModernSelectors.h"
 #include "mainwindow.h"
 #include "AchievementCelebration.h"
@@ -62,6 +63,7 @@ MainWindow::MainWindow(QWidget *parent)
 MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
     : QMainWindow(parent), m_database(databasePath), m_repository(m_database)
 {
+    setProperty("categoryDatabase",m_database.connectionName());
     setWindowTitle(QStringLiteral("Kura C++"));
     m_preferencesPath = m_database.databasePath() == QStringLiteral(":memory:")
         ? QString() : m_database.databasePath() + QStringLiteral(".ui.ini");
@@ -137,8 +139,8 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
     m_categoryFilter = new ModernComboBox(central);
     m_categoryFilter->setObjectName(QStringLiteral("categoryFilter"));
     m_categoryFilter->addItem(QStringLiteral("全部分类"), QString());
-    for (const auto &key : CategoryCatalog::purposeKeys())
-        m_categoryFilter->addItem(CategoryCatalog::purposeLabel(key), key);
+    m_categoryFilter->setProperty("categoryIncludeInactive",true);
+    CategoryWidgets::bind(m_categoryFilter,true,m_preferencesPath);
     filters->addWidget(m_categoryFilter);
     m_useDateRange = new QCheckBox(QStringLiteral("按日期"), central);
     m_useDateRange->setObjectName(QStringLiteral("useDateRangeCheckBox"));
@@ -314,7 +316,12 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
     auto *executionScroll = ShellWidgets::centeredPage(buildExecutionPage(), ShellWidgets::PageWidth, m_pages,Qt::AlignTop);
     executionScroll->setObjectName("executionScrollArea");
     m_pages->addWidget(executionScroll);
-    m_appearanceWidget = new AppearanceWidget(m_preferencesPath,m_pages);
+    m_appearanceWidget = new AppearanceWidget(m_preferencesPath,m_pages,&m_database);
+    connect(m_appearanceWidget,&AppearanceWidget::categoriesChanged,this,[this](const QString &oldKey,const QString &newKey) {
+        CategoryWidgets::refreshAll(this,oldKey,newKey);
+        if(!oldKey.isEmpty() && m_filter.category==oldKey)m_filter.category=newKey;
+        reloadTransactions();m_wishlistWidget->refresh();m_executionWidget->refreshReferences();
+    });
     m_pages->addWidget(ShellWidgets::centeredPage(m_appearanceWidget, 780, m_pages,Qt::AlignTop));
     connect(m_homeWidget, &HomeWidget::budgetRequested, this, [this] {
         showPage(Page::Billing);
@@ -372,6 +379,7 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
     });
     connect(m_dataWidget,&DataManagementWidget::recordsImported,this,[this](int count) { if (reloadTransactions()) statusBar()->showMessage(QStringLiteral("已导入 %1 笔历史消费，预算和复盘已更新。").arg(count),10000); else statusBar()->showMessage(QStringLiteral("导入已保存，但页面刷新失败，请检查数据库。"),10000); });
     connect(m_dataWidget, &DataManagementWidget::databaseRestored, this, [this] {
+        CategoryWidgets::refreshAll(this);
         if(auto *notifier=findChild<AchievementNotifier *>()) notifier->resetBaseline();
         for (auto *dialog:findChildren<ProductDetailsDialog *>()) dialog->reject();
         m_monthlyReviewWidget->cancelAnalysis();
@@ -482,10 +490,7 @@ void MainWindow::buildShell()
 QWidget *MainWindow::buildExecutionPage()
 {
     m_executionWidget=new ExecutionWidget(m_database,m_preferencesPath,m_pages);
-    connect(m_executionWidget,&ExecutionWidget::inputRequested,this,[this](const QString &initialText) {
-        openDecisionDialog();
-        if (auto *dialog=findChild<DecisionDialog *>()) dialog->setInitialText(initialText);
-    });
+
     connect(m_executionWidget,&ExecutionWidget::wishlistRequested,this,[this] { m_wishlistWidget->refresh(); m_homeWidget->refresh(); showPage(Page::Wishlist); });
     connect(m_executionWidget,&ExecutionWidget::purchaseRequested,this,[this](const Transaction &draft,qint64 sessionId) { openTransactionDialog(&draft,true,sessionId); });
     return m_executionWidget;
@@ -789,7 +794,11 @@ bool MainWindow::reloadTransactions(qint64 selectedId)
     const auto today = QDate::currentDate();
     const auto summary = ExpenseSummary::calculate(loaded, m_filter, today);
     const auto categories = CategorySummary::calculatePurposes(loaded, today);
+    m_categorySummaryTable->setRowCount(categories.size());
     for (int row = 0; row < categories.size(); ++row) {
+        if(!m_categorySummaryTable->item(row,0))m_categorySummaryTable->setItem(row,0,new QTableWidgetItem);
+        if(!m_categorySummaryTable->item(row,1))m_categorySummaryTable->setItem(row,1,new QTableWidgetItem);
+        m_categorySummaryTable->item(row,0)->setText(categories[row].category);
         auto *amount = m_categorySummaryTable->item(row, 1);
         amount->setText(Transaction::formatAmount(categories[row].amountCents));
         amount->setData(Qt::UserRole, categories[row].amountCents);

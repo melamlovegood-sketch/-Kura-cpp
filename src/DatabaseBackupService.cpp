@@ -89,7 +89,7 @@ bool checkSchema(const QSqlDatabase &database, QString &error)
     QSet<QString> workflowNames; for (const auto &table:WorkflowSchema::tables()) workflowNames.insert(table.name);
     const auto legacyWorkflowNames=workflowNames-QSet<QString>{"execution_wishes"};
     QSet<QString> supplementNames; for (const auto &table:SupplementSchema::tables()) supplementNames.insert(table.name);
-    const QSet<QString> legacySupplementNames=supplementNames-QSet<QString>{"achievement_marks"};
+    const QSet<QString> legacySupplementNames=supplementNames-QSet<QString>{"achievement_marks","user_categories"};
     QSet<QString> productNames; for (const auto &table:ProductSchema::tables()) productNames.insert(table.name);
     const QSet<QString> allowed = productNames + required + QSet<QString>{QStringLiteral("wish_pools"), QStringLiteral("savings_records")} + workflowNames + supplementNames;
     QSet<QString> found;
@@ -351,8 +351,9 @@ bool DatabaseBackupService::restorePrepared(QString &safetyBackup, QString &erro
     QStringList workflowDeletes,workflowInserts;
     workflowDeletes << "DELETE FROM main.execution_wishes";
     workflowDeletes << "DELETE FROM main.achievement_marks";
-    statements[statements.size()-2].replace("'monthly_stories'","'monthly_stories','achievement_marks'");
-    statements[statements.size()-1].replace("'monthly_stories'","'monthly_stories','achievement_marks'");
+    workflowDeletes << "DELETE FROM main.user_categories";
+    statements[statements.size()-2].replace("'monthly_stories'","'monthly_stories','achievement_marks','user_categories'");
+    statements[statements.size()-1].replace("'monthly_stories'","'monthly_stories','achievement_marks','user_categories'");
     for (const auto &name:{QStringLiteral("wishlist_order"),QStringLiteral("wishlist_price_links"),QStringLiteral("product_evidence"),QStringLiteral("product_links"),QStringLiteral("product_profiles"),QStringLiteral("bill_import_keys"),QStringLiteral("transaction_reviews"),QStringLiteral("monthly_stories"),QStringLiteral("review_tasks"),QStringLiteral("price_records"),QStringLiteral("execution_sessions"),QStringLiteral("brands"),QStringLiteral("shopping_rules"),QStringLiteral("price_tracks")}) workflowDeletes << "DELETE FROM main."+name;
     for (const auto &table:WorkflowSchema::tables()+SupplementSchema::tables()+ProductSchema::tables()) { const auto fields=table.columns.join(','); workflowInserts << "INSERT INTO main."+table.name+"("+fields+") SELECT "+fields+" FROM kura_restore."+table.name; }
     // Insert new business rows before restoring all AUTOINCREMENT sequences.

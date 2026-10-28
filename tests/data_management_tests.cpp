@@ -260,7 +260,7 @@ void DataManagementTests::filterExportAndRestoreUi()
     QVERIFY(widget->exportTo(csv, false)); QVERIFY(!contents(csv).contains(QStringLiteral("午饭").toUtf8()));
     QVERIFY(contents(csv).contains(QStringLiteral("耳机").toUtf8()));
     QVERIFY(widget->exportTo(csv, true)); QVERIFY(contents(csv).contains(QStringLiteral("午饭").toUtf8()));
-    category->setCurrentText(QStringLiteral("出行"));
+    category->setCurrentText(QStringLiteral("交通"));
     window.findChild<QPushButton *>(QStringLiteral("applyFilterButton"))->click();
     QVERIFY(widget->exportTo(csv, false)); QCOMPARE(contents(csv).count('\n'), 1);
     category->setCurrentText(QStringLiteral("未分类"));

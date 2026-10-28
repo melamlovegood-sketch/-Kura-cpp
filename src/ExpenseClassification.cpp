@@ -1,3 +1,4 @@
+#include "CategoryWidgets.h"
 #include "ExpenseClassification.h"
 #include "CategoryCatalog.h"
 #include "ModernSelectors.h"
@@ -21,7 +22,7 @@ ExpenseClassification::ExpenseClassification(const QString &settingsPath,QWidget
     m_purposePanel=new QWidget(this); auto *purposeRow=new QHBoxLayout(m_purposePanel); purposeRow->setContentsMargins(0,0,0,0);
     purposeRow->addWidget(new QLabel(QStringLiteral("消费用途"),m_purposePanel));
     m_purpose=new ModernComboBox(m_purposePanel); m_purpose->setObjectName("expensePurposeComboBox");
-    for (const auto &key:CategoryCatalog::purposeKeys()) m_purpose->addItem(CategoryCatalog::purposeLabel(key),key);
+    CategoryWidgets::bind(m_purpose,true,settingsPath);
     m_purpose->setCurrentIndex(m_purpose->findData("unclassified")); purposeRow->addWidget(m_purpose,1);
     m_scopePanel=new QWidget(this); auto *scopeRow=new QHBoxLayout(m_scopePanel); scopeRow->setContentsMargins(0,0,0,0);
     scopeRow->addWidget(new QLabel(QStringLiteral("预算归属"),m_scopePanel)); auto *scopes=new QButtonGroup(this);
@@ -44,7 +45,7 @@ QString ExpenseClassification::purpose() const { return m_purpose->currentData()
 QString ExpenseClassification::scope() const { return m_basic->isChecked()?QStringLiteral("basic"):QStringLiteral("discretionary"); }
 void ExpenseClassification::setScope(bool basic) { m_basic->setChecked(basic); m_free->setChecked(!basic); emit changed(); }
 void ExpenseClassification::setValues(const QString &purpose,const QString &scope) {
-    m_purpose->setCurrentIndex(m_purpose->findData(CategoryCatalog::validPurpose(purpose)?purpose:QStringLiteral("unclassified"))); setScope(scope=="basic");
+    CategoryWidgets::select(m_purpose,CategoryCatalog::validPurpose(purpose)?purpose:QStringLiteral("unclassified"),true); setScope(scope=="basic");
     m_purposePanel->setVisible(!m_budgetMode || this->purpose()!="unclassified");
 }
 void ExpenseClassification::setBudgetMode(bool budget,bool persist) {

@@ -28,7 +28,6 @@ public:
     bool prepareDecision(const ParsedProduct &product,const QByteArray &image={},qint64 productId=0);
     qint64 activeSessionId() const { return m_session.id; }
 signals:
-    void inputRequested(const QString &initialText);
     void wishlistRequested();
     void purchaseRequested(const Transaction &draft,qint64 sessionId);
 protected:
@@ -73,7 +72,7 @@ private:
     DecisionChatWidget *m_chat;
     QList<QCheckBox *> m_checks;
     QWidget *m_research;
-    QPushButton *m_start,*m_buy,*m_wish,*m_input,*m_skip,*m_undecided,*m_saveNotes;
+    QPushButton *m_start,*m_buy,*m_wish,*m_skip,*m_undecided,*m_saveNotes;
     QLabel *m_timer,*m_error;
     QWidget *m_steps;
     QList<QWidget *> m_stepPages;

@@ -1,3 +1,4 @@
+#include "CategoryCatalog.h"
 #include "AIService.h"
 #include "AIStubServer.h"
 #include "AppTheme.h"
@@ -115,11 +116,11 @@ void PriceRecordTests::appendKeepsIdentityAndRequiresMatch()
     PriceRecordDialog dialog(database,&tracks.first()); dialog.show(); QVERIFY(dialog.setScreenshot(screenshotFile(directory.path())));
     dialog.findChild<QPushButton *>("priceAnalyzeButton")->click(); QTRY_COMPARE_WITH_TIMEOUT(dialog.findChild<QDoubleSpinBox *>("priceAmountSpinBox")->value(),228.,5000);
     QCOMPARE(dialog.findChild<QLineEdit *>("priceNameEdit")->text(),QStringLiteral("原商品"));
-    QCOMPARE(dialog.findChild<QComboBox *>("priceCategoryComboBox")->currentData().toString(),QStringLiteral("study"));
+    QCOMPARE(dialog.findChild<QComboBox *>("priceCategoryComboBox")->currentData().toString(),QStringLiteral("other"));
     QVERIFY(dialog.findChild<QLabel *>("priceAIResultLabel")->text().contains(QStringLiteral("截图里的另一商品")));
     auto *save=dialog.findChild<QPushButton *>("savePriceRecordButton"); save->click(); QCOMPARE(count(database,"price_records"),1);
     dialog.findChild<QCheckBox *>("priceConfirmMatchCheckBox")->setChecked(true); save->click(); QCOMPARE(count(database,"price_records"),2); QCOMPARE(count(database,"price_tracks"),1);
-    QVERIFY(repository.load(tracks)); QCOMPARE(tracks.first().id,id); QCOMPARE(tracks.first().latestCents,22800);
+    QVERIFY(repository.load(tracks)); QCOMPARE(tracks.first().id,id); QCOMPARE(tracks.first().latestCents,22800);QCOMPARE(tracks.first().category,QStringLiteral("study"));
 }
 
 void PriceRecordTests::firstWishScreenshotKeepsIdentityAndRequiresMatch()
@@ -130,7 +131,7 @@ void PriceRecordTests::firstWishScreenshotKeepsIdentityAndRequiresMatch()
     PriceTrack context; context.name=wish.name; context.category=wish.detailCategory;
     PriceRecordDialog dialog(database,&context,nullptr,wish.id); dialog.show(); QVERIFY(dialog.setScreenshot(screenshotFile(directory.path())));
     dialog.findChild<QPushButton *>("priceAnalyzeButton")->click(); QTRY_COMPARE_WITH_TIMEOUT(dialog.findChild<QDoubleSpinBox *>("priceAmountSpinBox")->value(),228.,5000);
-    QCOMPARE(dialog.findChild<QLineEdit *>("priceNameEdit")->text(),wish.name); QCOMPARE(dialog.findChild<QComboBox *>("priceCategoryComboBox")->currentData().toString(),wish.detailCategory);
+    QCOMPARE(dialog.findChild<QLineEdit *>("priceNameEdit")->text(),wish.name); QCOMPARE(dialog.findChild<QComboBox *>("priceCategoryComboBox")->currentData().toString(),CategoryCatalog::productKey(wish.detailCategory));
     dialog.findChild<QPushButton *>("savePriceRecordButton")->click(); QCOMPARE(count(database,"price_records"),0);
     dialog.findChild<QCheckBox *>("priceConfirmMatchCheckBox")->setChecked(true); dialog.findChild<QPushButton *>("savePriceRecordButton")->click(); QCOMPARE(count(database,"price_records"),1);
     QList<WishItem> loaded; QVERIFY(wishes.findAll(loaded)); QCOMPARE(loaded.size(),1); QCOMPARE(loaded.first().readyAt,wish.readyAt);

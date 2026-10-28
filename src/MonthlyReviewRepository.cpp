@@ -40,6 +40,8 @@ bool MonthlyReviewRepository::load(const QDate &requested,MonthlyReviewData &dat
             hashFields({current?"current":"previous",QString::number(expense.id),expense.name,QString::number(expense.cents),expense.category,expense.date.toString(Qt::ISODate),time,QString::number(expense.tag),expense.note,expense.purchaseNote});
             if (current) { if (!add(loaded.totalCents,expense.cents) || !add(record.isBasic()?loaded.basicCents:loaded.discretionaryCents,expense.cents)) { m_error=QStringLiteral("月度金额超过支持范围。"); return false; } ++loaded.count; if (expense.tag==1) ++loaded.worthCount; if (expense.tag==-1) ++loaded.regretCount; loaded.expenses << expense; }
             else if (!add(loaded.previousCents,expense.cents)) { m_error=QStringLiteral("上月金额超过支持范围。"); return false; }
+            bool known=false;for(const auto &category:loaded.categories)if(category.key==record.purposeCategory())known=true;
+            if(!known)loaded.categories.append({record.purposeCategory(),0,0,0});
             for (auto &category:loaded.categories) if (category.key==record.purposeCategory()) { if (!add(current?category.cents:category.previousCents,expense.cents)) { m_error=QStringLiteral("分类金额超过支持范围。"); return false; } if (current) ++category.count; break; }
         }
         if (query.lastError().isValid()) { m_error=WorkflowStorage::error(query.lastError()); return false; } return true;

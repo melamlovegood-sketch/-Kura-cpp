@@ -1,4 +1,5 @@
 #include "DecisionSchema.h"
+#include "CategoryRepository.h"
 #include "WorkflowSchema.h"
 #include "SupplementSchema.h"
 #include <QSqlQuery>
@@ -39,6 +40,7 @@ bool DecisionSchema::upgrade(QSqlDatabase database, QString &error)
     if (!run(QStringLiteral("CREATE UNIQUE INDEX IF NOT EXISTS one_active_execution ON execution_sessions((1)) WHERE state='active'"))) return false;
     if (!run(QStringLiteral("DROP INDEX IF EXISTS unique_active_price_name"))) return false;
     if (!run(QStringLiteral("CREATE INDEX IF NOT EXISTS price_name_lookup ON price_tracks(detail_category,name_key) WHERE active=1"))) return false;
+    if (!CategoryRepository::upgrade(database,error)) {database.rollback();return false;}
     if (!database.commit()) { error = database.lastError().text(); database.rollback(); return false; }
     return true;
 }

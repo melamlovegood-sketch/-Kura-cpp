@@ -73,6 +73,7 @@ bool BillParser::parseRows(const QList<QStringList> &rows,BillParseResult &resul
     const int nameCol=column({QStringLiteral("商品说明"),QStringLiteral("商品名称"),QStringLiteral("商品"),QStringLiteral("名称")}), amountCol=column({QStringLiteral("金额")},true), ioCol=column({QStringLiteral("收/支")});
     const int statusCol=column({QStringLiteral("当前状态"),QStringLiteral("交易状态")}), partyCol=column({QStringLiteral("交易对方")},true), typeCol=column({QStringLiteral("交易类型"),QStringLiteral("交易分类")}), numberCol=column({QStringLiteral("交易单号"),QStringLiteral("交易订单号"),QStringLiteral("交易号")},true), categoryCol=column({QStringLiteral("细分类"),QStringLiteral("分类")}),noteCol=column({QStringLiteral("备注")});
     const int purposeCol=column({QStringLiteral("消费用途")}), scopeCol=column({QStringLiteral("预算归属")});
+    const int detailKeyCol=column({QStringLiteral("商品分类标识")}),purposeKeyCol=column({QStringLiteral("消费用途标识")});
     if (dateCol<0 || nameCol<0 || amountCol<0 || (!kura && ioCol<0)) { error=QStringLiteral("账单缺少日期、商品、金额或收支字段。"); return false; }
     const auto get=[](const QStringList &row,int i) { return i>=0 && i<row.size()?row[i].trimmed():QString(); };
     for (int i=headerRow+1;i<rows.size();++i) {
@@ -94,12 +95,20 @@ bool BillParser::parseRows(const QList<QStringList> &rows,BillParseResult &resul
         draft.name=draft.originalName.left(100); draft.externalId=get(row,numberCol); if (draft.externalId.startsWith("=\"") && draft.externalId.endsWith('"')) draft.externalId=draft.externalId.mid(2,draft.externalId.size()-3); if (draft.externalId.startsWith('\'')) draft.externalId.remove(0,1); if (draft.externalId.size()>256) { ++parsed.invalid; continue; }
         bool certain=false; draft.category=guessCategory(goods.isEmpty()?party:goods,certain); if (!certain) draft.category=guessCategory(draft.originalName,certain);
         if (kura && categoryCol>=0) for (const auto &key:CategoryCatalog::keys()) if (get(row,categoryCol)==key || get(row,categoryCol)==CategoryCatalog::label(key)) { draft.category=key; certain=true; break; }
-        if (kura && !certain && categoryCol>=0) { const auto legacy=CategoryCatalog::fromLegacy(get(row,categoryCol)); if (!legacy.isEmpty()) { draft.category=legacy; certain=true; } }
+        if (kura && categoryCol>=0) { const auto legacy=CategoryCatalog::fromLegacy(get(row,categoryCol)); if (!legacy.isEmpty()) { draft.category=legacy; certain=true; } }
         draft.purposeCategory=CategoryCatalog::purposeFromDetail(draft.category);
         draft.budgetScope=CategoryCatalog::isBasic(draft.category)?QStringLiteral("basic"):QStringLiteral("discretionary");
         // Only recognize explicit garment terms; an online purchase alone is insufficient.
         if (!kura && QRegularExpression(QStringLiteral("衣服|衬衫|外套|裙|裤|运动鞋|皮鞋|背包|手提包")).match(draft.originalName).hasMatch()) draft.purposeCategory="clothing";
         if (kura && purposeCol>=0) for (const auto &key:CategoryCatalog::purposeKeys()) if (get(row,purposeCol)==key || get(row,purposeCol)==CategoryCatalog::purposeLabel(key)) { draft.purposeCategory=key; break; }
+        if(kura && purposeCol>=0) {
+            const auto value=get(row,purposeCol);bool standard=false;
+            for(const auto &key:CategoryCatalog::purposeKeys()) if(value==key || value==CategoryCatalog::purposeLabel(key))standard=true;
+            if(value==QStringLiteral("出行")){draft.purposeCategory="travel";standard=true;}
+            if(!standard && CategoryCatalog::isCustom(CategoryCatalog::customKey(value))){draft.purposeCategory=CategoryCatalog::customKey(value);draft.category=draft.purposeCategory;}
+        }
+        if(kura && detailKeyCol>=0 && CategoryCatalog::isValid(get(row,detailKeyCol)))draft.category=get(row,detailKeyCol);
+        if(kura && purposeKeyCol>=0 && CategoryCatalog::validPurpose(get(row,purposeKeyCol)))draft.purposeCategory=get(row,purposeKeyCol);
         if (kura && scopeCol>=0) {
             const auto scope=get(row,scopeCol);
             if (scope==QStringLiteral("必要生活") || scope==QStringLiteral("基础生活") || scope=="basic") draft.budgetScope="basic";
