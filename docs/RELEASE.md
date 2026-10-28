@@ -1,43 +1,79 @@
-# Kura C++ Windows 运行包
+# Windows 构建与发布
 
-0.12.6 运行包包含 KuraCpp.exe、匹配的 Qt（含 Network）、Zlib 和 MinGW 依赖、平台与 SQLite／TLS 插件、Demo.cmd、虚构账单样例、使用说明、测试记录和页面截图。常规包不含个人数据库、API Key 或测试程序；仅显式使用 `Build-Unified.ps1 -IncludeTrialAI` 的小组测试包携带项目方授权的共享 AI 配置，详见 [小组 AI 试用](TRIAL_AI.md)。本次记账工作台见 BILLING_REFRESH.md，消费人格故事见 CONSUMER_PERSONALITIES.md，复盘界面见 REVIEW_REFRESH.md，导入与故事规则见 IMPORT_MONTHLY_REVIEW.md。
+最近已验收基线为 **0.16.6**；开发版本取自 `CMakeLists.txt`，不能仅凭版本号认定已发布。发布统一使用 `scripts/Build-Unified.ps1`，通过编译、完整回归及源码指纹核对后，才更新 `build/current.json`。安装包流程见 [INSTALLER.md](INSTALLER.md)。
 
-## 本次构建环境
+## 使用已有验收包
 
-0.12.3 清单简洁版见 PLANNING_REFRESH.md；运行包附带 `planning-*.png` 实际窗口截图。
-
-Windows 11 x64，MSYS2 UCRT64，GCC 15.2，Qt 6.10.1，CMake 和 Ninja；源码编译另需匹配 Kit 的 Zlib 开发库。程序包使用 Release 构建；测试用独立临时数据库。
-
-## 重新构建与打包
-
-根目录 CMD 入口使用 Windows PowerShell 5.1。含中文的 `.ps1` 脚本必须保存为 UTF-8 with BOM，避免中文引号被误读后触发解析错误。统一发布前会通过 `scripts/Test-LauncherCompatibility.ps1` 使用系统 PowerShell 5.1 检查所有构建／启动脚本的编码与语法；不能只在 PowerShell 7 中验证。
-
-「启动最新版／体验最新版」打开 `build/current.json` 指向的最近一份已验收运行包，并核对指针、清单与程序哈希。开发中的源码变化不会强制用户在启动时重新编译；使用「更新最新版」完成编译、完整回归与源码一致性检查后才替换固定入口。首次没有已验收运行包时才自动构建。`Start-Current.ps1 -CheckOnly` 仍严格检查运行包是否与当前源码一致，供发布验收使用。
-
-在匹配的 Qt Kit 中执行：
+完整本地工作区使用上一级“启动最新版.cmd”“体验最新版.cmd”和“更新最新版.cmd”。仓库内的等价入口为：
 
 ```powershell
-cmake -S . -B build-release -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=C:/msys64/ucrt64 -DBUILD_TESTING=ON
-cmake --build build-release --parallel 4
-ctest --test-dir build-release --output-on-failure
+./scripts/Start-Current.ps1             # 启动最近已验收版本
+./scripts/Start-Current.ps1 -Demo       # 临时虚构数据
+./scripts/Start-Current.ps1 -CheckOnly  # 严格检查源码与运行包一致
+./scripts/Build-Unified.ps1            # 重新构建、完整回归并更新固定入口
 ```
 
-MSYS2 的 moc 对中文路径有兼容问题，构建时用英文路径或指向本仓库的英文目录联接。先用匹配 Kit 的 windeployqt 准备完整运行依赖，再补齐该工具未自动复制的 MinGW 和第三方 DLL。
+源码变化不会让普通启动强制重编译；更新需显式运行统一构建。没有验收包时，启动脚本会尝试首次构建，但仍需事先准备工具链和匹配的运行依赖。
+
+## 首次克隆与日常开发
+
+GitHub 的 Download ZIP 和 `git clone` 仅获取源码，不提供已编译程序、Qt 运行库、个人数据库或上一级 CMD。依赖为 CMake 3.16+、C++17、Qt 6.7+（Widgets / Sql / Network；测试另需 Test）、Zlib、匹配的编译器及 Ninja。
+
+当前已验证环境是 Windows 11 x64、MSYS2 UCRT64、GCC 15.2、Qt 6.10.1。Qt 与编译器必须来自同一个 Kit。MSYS2 moc 对中文路径有兼容问题，使用指向唯一源码的英文目录联接，不复制源码独立开发。
+
+下面在仓库根目录执行，为日常检查使用独立输出目录。先确认 `source` 联接不存在或已指向本仓库；若它指向其他项目，停止并检查，不覆盖原联接。
 
 ```powershell
-./scripts/Package-Windows.ps1 -Executable ./build-release/KuraCpp.exe -RuntimeDirectory C:/path/to/complete-runtime -LicenseDirectory C:/path/to/kit/licenses
+$kuraRepo = (Get-Location).Path
+$kuraAliasRoot = Join-Path $env:LOCALAPPDATA 'KuraBuild'
+New-Item -ItemType Directory -Path $kuraAliasRoot -Force | Out-Null
+$kuraSource = Join-Path $kuraAliasRoot 'source'
+if (-not (Test-Path -LiteralPath $kuraSource)) {
+    New-Item -ItemType Junction -Path $kuraSource -Target $kuraRepo | Out-Null
+}
+$kuraQt = 'C:/msys64/ucrt64'
+$env:PATH = "$kuraQt/bin;$env:PATH"
+$kuraBuild = Join-Path $kuraAliasRoot 'build-local'
+cmake -S $kuraSource -B $kuraBuild -G Ninja -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=$kuraQt" -DBUILD_TESTING=ON
+cmake --build $kuraBuild --parallel 4
+ctest --test-dir $kuraBuild --output-on-failure --parallel 1
 ```
 
-脚本在 `build/releases/KuraCpp-版本-windows-x64` 下创建目录和 ZIP，并输出 SHA256。同版本目标已存在时停止，不自动删除或覆盖旧发布包。只复制 DLL、已知插件目录、文档、截图和构建好的程序，不复制源码目录中的 SQLite 数据。
+这套命令用于开发检查，不提升固定发布入口。任一步骤失败时先处理错误，不将产物标为最新版。
+
+## 首次准备运行依赖
+
+`Build-Unified.ps1` 会构建和测试，但当前脚本还要求一份已部署好的、同 Kit 的运行依赖。首次克隆时没有这些被忽略的文件，需先使用匹配的 `windeployqt` 准备它们。例如，在上文编译成功后：
 
 ```powershell
-./scripts/Measure-Code.ps1
+$kuraRuntime = Join-Path $kuraRepo 'build/secondary-focused-run'
+New-Item -ItemType Directory -Path $kuraRuntime -Force | Out-Null
+& "$kuraQt/bin/windeployqt.exe" --release --compiler-runtime --dir $kuraRuntime (Join-Path $kuraBuild 'KuraCpp.exe')
+foreach ($kuraDll in @('zlib1.dll','libgcc_s_seh-1.dll','libstdc++-6.dll','libwinpthread-1.dll')) {
+    Copy-Item -LiteralPath (Join-Path "$kuraQt/bin" $kuraDll) -Destination $kuraRuntime
+}
 ```
 
-该命令给出手写 C/C++、PowerShell、CMake 的文件数及非空行数，口径和限制见 CODE_METRICS.md。代码比例不是成员贡献比例。
+该示例适用于上述 MSYS2 UCRT64 Kit。确认包含 Widgets／SQL／Network 依赖、`platforms/qwindows.dll`、`sqldrivers/qsqlite.dll` 及对应 TLS 插件；第三方 DLL 的实际需求随 Kit 变化，按依赖检查补齐。不要从旧包混入其他版本的 Qt DLL。脚本会核对 Qt6Core 与当前 Kit 的哈希；缺失或不匹配时停止发布。
 
-## 验证范围
+## 统一发布与安装包
 
-本机自动测试、界面预览和限制 PATH 后的运行依赖检查见 TEST_REPORT.md。另一台 Windows 电脑、现场投影环境、人工 Excel 检查仍需组员按 ACCEPTANCE.md 填写。
+运行 `./scripts/Build-Unified.ps1`。脚本持有独占发布锁，完整回归失败或构建期间源码变化时，不更新固定入口。产物位于 `build/releases/`，随包保存 `build-manifest.json` 和 `verified-tests.log`。更新成功后再运行 `./scripts/Start-Current.ps1 -CheckOnly`。
 
-最终课程提交需另行加入真实名单、个人报告、组报告、互评、设计确认及教师通知，并按课程要求命名 RAR。此运行 ZIP 可以作为其中的程序目录，不能当作这些材料已经完成。
+需要安装包时，在统一发布成功后执行：
+
+```powershell
+./scripts/Build-Installer.ps1
+```
+
+安装器需要 Inno Setup 6 及匹配的运行许可文件，参数与验证步骤见 [安装说明](INSTALLER.md)。`Package-Windows.ps1` 保留为底层便携包工具，单独运行它不能替代统一验收或更新固定入口。
+
+常规发布不含个人数据、设置和 API Key。仅经项目方明确授权的小组测试可以使用 `-IncludeTrialAI`，详见 [小组 AI 试用](TRIAL_AI.md)。试用包含共享凭据，不上传公开仓库或公开 Release；源码版本标签也不能代替实际构建验收。
+
+## 校验与交付边界
+
+根目录 CMD 使用 Windows PowerShell 5.1；中文 `.ps1` 必须保存为 UTF-8 BOM。统一发布前执行 `scripts/Test-LauncherCompatibility.ps1` 检查编码与语法。字体和运行依赖许可随包保留。
+
+自动测试使用临时数据，AI 验收使用本地模拟服务。异机兼容、投影环境、真实 AI 效果和用户体验按 [验收清单](ACCEPTANCE.md) 实际记录；历史结果见 [测试记录](TEST_REPORT.md)。
+
+课程最终提交还需真实成员信息、个人报告、组报告、互评及教师要求的材料；源码 ZIP、运行包和安装包都不能代替完整课程交付。代码统计可运行 `scripts/Measure-Code.ps1`，统计口径见 [CODE_METRICS.md](CODE_METRICS.md)，代码量不等于个人贡献度。

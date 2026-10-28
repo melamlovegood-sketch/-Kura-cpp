@@ -10,3 +10,28 @@
 
 # Optional private trial credentials are never source assets.
 kura-trial.json
+
+# Local build output and distribution artifacts.
+/out/
+/dist/
+/CMakeFiles/
+/CMakeCache.txt
+/Testing/
+/compile_commands.json
+*.exe
+*.dll
+*.pdb
+*.zip
+*.7z
+*.rar
+
+# Local configuration and temporary files.
+.env
+.env.*
+!.env.example
+*.sqlite.ui.ini
+*.log
+*.tmp
+*.bak
+.DS_Store
+Thumbs.db
