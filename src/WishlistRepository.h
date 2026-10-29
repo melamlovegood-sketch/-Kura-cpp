@@ -12,6 +12,8 @@ public:
     // Editing an open wish restarts its cooling period; completed history is immutable.
     bool update(const WishItem &item, const QDateTime &now = QDateTime::currentDateTimeUtc());
     bool remove(qint64 id);
+    // Waiting items are abandoned; completed history is removed. Stale states fail as a group.
+    bool removeMany(const QList<WishItem> &snapshot, const QDateTime &now = QDateTime::currentDateTimeUtc());
     bool abandon(qint64 id, const QDateTime &now = QDateTime::currentDateTimeUtc());
     // Both the expense and the wish state commit together; expense is unchanged on failure.
     bool purchase(qint64 id, Transaction &expense,

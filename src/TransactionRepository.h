@@ -14,6 +14,7 @@ public:
     bool add(Transaction &transaction);
     bool update(const Transaction &transaction);
     bool remove(qint64 id);
+    bool removeMany(const QList<qint64> &ids);
     // On failure, the caller's existing list is kept unchanged.
     bool findAll(QList<Transaction> &transactions);
     QString lastError() const;

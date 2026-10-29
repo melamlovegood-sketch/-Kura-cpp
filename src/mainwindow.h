@@ -26,6 +26,7 @@ class QGroupBox;
 class QResizeEvent;
 class BillingWorkspace;
 class QDialog;
+class BatchSelectionBar;
 
 class MainWindow : public QMainWindow
 {
@@ -99,6 +100,7 @@ private:
     QDateEdit *m_startDate = nullptr;
     QDateEdit *m_endDate = nullptr;
     QTableWidget *m_transactionTable = nullptr;
+    BatchSelectionBar *m_recordSelection = nullptr;
     QTableWidget *m_categorySummaryTable = nullptr;
     QBoxLayout *m_recordsLayout = nullptr;
     QGroupBox *m_categoryBox = nullptr;

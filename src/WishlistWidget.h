@@ -9,6 +9,7 @@ class QPushButton;
 class QLabel;
 class QAction;
 class QToolButton;
+class BatchSelectionBar;
 
 class WishlistWidget : public QWidget
 {
@@ -35,6 +36,7 @@ private:
     void openWishDialog(const WishItem *item = nullptr);
     void purchaseSelected();
     void confirmWish(qint64 id);
+    void confirmWishes(const QList<qint64> &ids);
     void openProductDetails(qint64 id);
     void showError(const QString &error);
     void openPrices();
@@ -56,6 +58,8 @@ private:
     QDateTime m_now;
     qint64 m_goalWishId = 0;
     ProductList *m_table;
+    BatchSelectionBar *m_selection;
+    QPushButton *m_deleteSelected;
     QComboBox *m_filter;
     QLabel *m_summary;
     QLabel *m_error;

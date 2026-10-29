@@ -1,4 +1,5 @@
 #include "CategoryWidgets.h"
+#include "BatchSelectionBar.h"
 #include "ModernSelectors.h"
 #include "mainwindow.h"
 #include "AchievementCelebration.h"
@@ -207,6 +208,8 @@ MainWindow::MainWindow(const QString &databasePath, QWidget *parent)
     m_transactionTable->setMinimumHeight(200);
     m_transactionTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     m_transactionTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    m_recordSelection=new BatchSelectionBar(m_transactionTable,"transaction",true);
+    layout->addWidget(m_recordSelection);
     auto *records = new QHBoxLayout;
     m_recordsLayout = records;
     records->addWidget(m_transactionTable, 3);
@@ -690,19 +693,26 @@ void MainWindow::openTransactionDialog(const Transaction *existing,bool purchase
 
 void MainWindow::editSelectedTransaction()
 {
+    if (m_transactionTable->selectionModel()->selectedRows().size()!=1) return;
     if (const auto *transaction = selectedTransaction())
         openTransactionDialog(transaction);
 }
 
 void MainWindow::deleteSelectedTransaction()
 {
-    const auto *transaction = selectedTransaction();
-    if (!transaction)
-        return;
-    const qint64 id = transaction->id();
+    if (findChild<QMessageBox *>("deleteConfirmationDialog")) return;
+    QList<qint64> ids; qint64 cents=0;
+    for (const auto &row:m_transactionTable->selectionModel()->selectedRows()) {
+        const auto id=m_transactionTable->item(row.row(),0)->data(Qt::UserRole).toLongLong();
+        ids.append(id);
+        for (const auto &item:m_transactions) if (item.id()==id) { cents+=item.amountCents(); break; }
+    }
+    if (ids.isEmpty()) return;
+    QString detail;
+    if (ids.size()==1) for (const auto &item:m_transactions) if (item.id()==ids.first()) { detail=QStringLiteral("“%1”\n").arg(item.description()); break; }
     auto *confirmation = new QMessageBox(QMessageBox::Question, QStringLiteral("删除消费记录"),
-        QStringLiteral("确定删除“%1”（%2）吗？")
-            .arg(transaction->description(), Transaction::formatAmount(transaction->amountCents())),
+        detail+QStringLiteral("确定删除选中的 %1 笔消费（合计 %2）吗？\n删除后预算、图表和复盘会同步更新，此操作无法撤销。")
+            .arg(ids.size()).arg(Transaction::formatAmount(cents)),
         QMessageBox::Yes | QMessageBox::No, this);
     confirmation->setObjectName(QStringLiteral("deleteConfirmationDialog"));
     confirmation->setTextFormat(Qt::PlainText);
@@ -711,15 +721,15 @@ void MainWindow::deleteSelectedTransaction()
     confirmation->button(QMessageBox::No)->setText(QStringLiteral("取消"));
     confirmation->setDefaultButton(QMessageBox::No);
     confirmation->setEscapeButton(QMessageBox::No);
-    connect(confirmation, &QMessageBox::finished, this, [this, confirmation, id](int) {
+    connect(confirmation, &QMessageBox::finished, this, [this, confirmation, ids](int) {
         if (confirmation->standardButton(confirmation->clickedButton()) != QMessageBox::Yes)
             return;
-        if (!m_repository.remove(id)) {
+        if (!m_repository.removeMany(ids)) {
             showError(QStringLiteral("删除失败：%1").arg(m_repository.lastError()));
             return;
         }
         if (reloadTransactions())
-            statusBar()->showMessage(QStringLiteral("已删除消费记录。"), 5000);
+            statusBar()->showMessage(QStringLiteral("已删除 %1 笔消费记录。").arg(ids.size()), 5000);
         else
             showError(QStringLiteral("记录已删除，但列表刷新失败：%1。请重新启动程序加载。")
                       .arg(m_repository.lastError()));
@@ -774,7 +784,7 @@ bool MainWindow::selectRecord(qint64 id)
     if (!present) { resetFilters(); }
     for (int row=0;row<m_transactionTable->rowCount();++row) {
         if (m_transactionTable->item(row,0)->data(Qt::UserRole).toLongLong()==id) {
-            m_transactionTable->selectRow(row); return true;
+            m_transactionTable->clearSelection(); m_transactionTable->selectRow(row); return true;
         }
     }
     showError(QStringLiteral("这笔记录已不存在，请刷新后重试。"));
@@ -841,6 +851,7 @@ bool MainWindow::reloadTransactions(qint64 selectedId)
         m_transactionTable->selectRow(selectedRow);
         m_transactionTable->scrollToItem(m_transactionTable->item(selectedRow, 0));
     }
+    m_recordSelection->refresh();
     m_totalLabel->setText(QStringLiteral("全部支出：%1").arg(Transaction::formatAmount(summary.totalCents)));
     m_monthLabel->setText(QStringLiteral("本月支出：%1").arg(Transaction::formatAmount(summary.monthCents)));
     m_todayLabel->setText(QStringLiteral("今日支出：%1").arg(Transaction::formatAmount(summary.todayCents)));
@@ -862,11 +873,8 @@ bool MainWindow::reloadTransactions(qint64 selectedId)
 
 qint64 MainWindow::selectedTransactionId() const
 {
-    const int row = m_transactionTable->currentRow();
-    if (row < 0 || !m_transactionTable->item(row, 0)
-        || !m_transactionTable->item(row, 0)->isSelected())
-        return 0;
-    return m_transactionTable->item(row, 0)->data(Qt::UserRole).toLongLong();
+    const auto rows=m_transactionTable->selectionModel()->selectedRows();
+    return rows.size()==1?m_transactionTable->item(rows.first().row(),0)->data(Qt::UserRole).toLongLong():0;
 }
 
 const Transaction *MainWindow::selectedTransaction() const
@@ -882,8 +890,11 @@ const Transaction *MainWindow::selectedTransaction() const
 void MainWindow::updateActionState()
 {
     const bool selected = m_databaseReady && selectedTransaction() != nullptr;
-    m_editButton->setEnabled(selected);
-    m_deleteButton->setEnabled(selected);
+    const auto count=m_transactionTable->selectionModel()->selectedRows().size();
+    m_editButton->setEnabled(selected && count==1);
+    m_deleteButton->setEnabled(m_databaseReady && count>0);
+    m_deleteButton->setText(count>1?QStringLiteral("删除 (%1)").arg(count):QStringLiteral("删除"));
+    m_recordSelection->setEnabled(m_databaseReady);
     m_addButton->setEnabled(m_databaseReady);
     m_applyFilterButton->setEnabled(m_databaseReady);
     m_resetFilterButton->setEnabled(m_databaseReady);

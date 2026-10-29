@@ -1,4 +1,5 @@
 #include "ModernSelectors.h"
+#include "BatchSelectionBar.h"
 #include "WishlistWidget.h"
 #include "PricePerspective.h"
 #include "WishPriceDialog.h"
@@ -127,6 +128,16 @@ WishlistWidget::WishlistWidget(DatabaseManager &database, QWidget *parent)
     layout->addWidget(m_error);
     m_table = new ProductList(7, this);
     m_table->setObjectName(QStringLiteral("wishlistTable"));
+    m_selection=new BatchSelectionBar(m_table,"wishlist");
+    m_deleteSelected=new QPushButton(QStringLiteral("删除所选"),m_selection);
+    m_deleteSelected->setObjectName("deleteSelectedWishesButton"); m_deleteSelected->setProperty("destructive",true);
+    m_selection->layout()->addWidget(m_deleteSelected);
+    layout->addWidget(m_selection);
+    connect(m_deleteSelected,&QPushButton::clicked,this,[this] {
+        QList<qint64> ids;
+        for (const auto &row:m_table->selectionModel()->selectedRows()) ids.append(m_table->item(row.row(),0)->data(Qt::UserRole).toLongLong());
+        confirmWishes(ids);
+    });
     auto *productInfo=new QPushButton(QStringLiteral("商品资料"),details);
     productInfo->setObjectName("wishProductInfoButton");
     productInfo->setProperty("quiet",true);
@@ -136,6 +147,12 @@ WishlistWidget::WishlistWidget(DatabaseManager &database, QWidget *parent)
         if (auto *cell=m_table->item(row,0)) openProductDetails(cell->data(Qt::UserRole).toLongLong());
     });
     m_table->setRowActionsHandler([this](int row,QHBoxLayout *header) {
+        auto *check=new BatchCheckBox(m_table); check->setObjectName("wishSelectCheckBox");
+        check->setAccessibleName(QStringLiteral("选择这件商品"));
+        header->insertWidget(0,check);
+        connect(check,&QCheckBox::toggled,this,[this,row](bool checked) {
+            m_table->selectionModel()->select(m_table->model()->index(row,0),QItemSelectionModel::Rows | (checked?QItemSelectionModel::Select:QItemSelectionModel::Deselect));
+        });
         auto *wand=new WishActionButton(WishActionButton::Wand,m_table);
         wand->setObjectName("wishGoalButton");
         auto *trash=new WishActionButton(WishActionButton::Trash,m_table);
@@ -229,6 +246,8 @@ void WishlistWidget::render(const QDateTime &now)
 {
     const auto perspective=PricePerspectiveStore::load(PricePerspectiveStore::settingsPath(m_database.databasePath()));
     const qint64 selected = selectedId();
+    QSet<qint64> selectedIds;
+    for (const auto &row:m_table->selectionModel()->selectedRows()) selectedIds.insert(m_table->item(row.row(),0)->data(Qt::UserRole).toLongLong());
     int waiting = 0, ready = 0, purchased = 0, abandoned = 0;
     qint64 abandonedCents = 0;
     QList<const WishItem *> visible;
@@ -302,7 +321,12 @@ void WishlistWidget::render(const QDateTime &now)
         trash->setEnabled(m_available);
         if (item.id == selected) selectedRow = row;
     }
-    if (rebuild && selectedRow >= 0) m_table->selectRow(selectedRow);
+    if (rebuild) {
+        // Restore only IDs still in this visible snapshot; filters cannot retain hidden selections.
+        for (int row=0;row<visible.size();++row) if (selectedIds.contains(visible[row]->id))
+            m_table->selectionModel()->select(m_table->model()->index(row,0),QItemSelectionModel::Select | QItemSelectionModel::Rows);
+        if (selectedRow>=0) m_table->selectionModel()->setCurrentIndex(m_table->model()->index(selectedRow,0),QItemSelectionModel::NoUpdate);
+    }
     m_summary->setText(m_filter->currentIndex() == 5
         ? QStringLiteral("%1 件待购").arg(waiting + ready)
         : QStringLiteral("%1 件 · %2").arg(visible.size()).arg(m_filter->currentText()));
@@ -312,15 +336,15 @@ void WishlistWidget::render(const QDateTime &now)
         : QStringLiteral("当前没有商品，可以在“···”中查看其他状态。"));
     m_empty->setVisible(m_table->rowCount() == 0);
     m_table->setVisible(m_table->rowCount() > 0);
+    m_selection->refresh();
     updateActions();
     m_table->updateExpansion();
 }
 
 qint64 WishlistWidget::selectedId() const
 {
-    const int row = m_table->currentRow();
-    const auto *cell = row >= 0 ? m_table->item(row, 0) : nullptr;
-    return cell && cell->isSelected() ? cell->data(Qt::UserRole).toLongLong() : 0;
+    const auto rows=m_table->selectionModel()->selectedRows();
+    return rows.size()==1?m_table->item(rows.first().row(),0)->data(Qt::UserRole).toLongLong():0;
 }
 
 const WishItem *WishlistWidget::selectedItem() const
@@ -333,8 +357,22 @@ const WishItem *WishlistWidget::selectedItem() const
 
 void WishlistWidget::updateActions()
 {
+    const auto count=m_table->selectionModel()->selectedRows().size();
+    m_selection->setEnabled(m_available);
+    m_deleteSelected->setEnabled(m_available && count>0);
+    int waitingCount=0;
+    for (int row=0;row<m_table->rowCount();++row) if (auto *body=m_table->cellWidget(row,0)) {
+        auto *check=body->findChild<QCheckBox *>("wishSelectCheckBox");
+        const QSignalBlocker blocker(check);
+        const auto *cell=m_table->item(row,0);
+        check->setChecked(cell && cell->isSelected());
+        if (cell && cell->isSelected()) for (const auto &item:m_items) if (item.id==cell->data(Qt::UserRole).toLongLong() && item.status==WishStatus::Waiting) ++waitingCount;
+    }
+    m_deleteSelected->setText(count==0?QStringLiteral("删除所选"):waitingCount==count?QStringLiteral("放弃所选 (%1)").arg(count):waitingCount==0?QStringLiteral("删除所选 (%1)").arg(count):QStringLiteral("删除／放弃 (%1)").arg(count));
+    m_deleteSelected->setMinimumWidth(m_deleteSelected->fontMetrics().horizontalAdvance(m_deleteSelected->text())+32);
+    m_selection->layout()->activate();
     const auto *item = selectedItem();
-    const bool open = m_available && item && item->status == WishStatus::Waiting;
+    const bool open = m_available && count==1 && item && item->status == WishStatus::Waiting;
     m_add->setEnabled(m_available);
     m_adjustOrder->setEnabled(m_available && std::count_if(m_items.cbegin(),m_items.cend(),[](const WishItem &w) { return w.status==WishStatus::Waiting; })>1);
     m_refresh->setEnabled(m_available);
@@ -428,17 +466,20 @@ void WishlistWidget::purchaseSelected()
 
 void WishlistWidget::confirmWish(qint64 wishId)
 {
-    const WishItem *item=nullptr;
-    for (const auto &candidate:m_items) if (candidate.id==wishId) { item=&candidate; break; }
-    if (!item) return;
-    const qint64 id = item->id;
-    const bool removing=item->status!=WishStatus::Waiting;
-    const QString action = removing ? QStringLiteral("删除记录") : QStringLiteral("放弃");
-    const QString explanation = removing
-        ? QStringLiteral("仅删除清单条目，已记录的消费仍保留。")
-        : QStringLiteral("商品会从待购清单移除，保留放弃记录，不计入消费或预算。");
+    confirmWishes({wishId});
+}
+
+void WishlistWidget::confirmWishes(const QList<qint64> &ids)
+{
+    if (!m_available || findChild<QMessageBox *>("wishConfirmationDialog")) return;
+    QList<WishItem> snapshot; int waiting=0;
+    for (const auto id:ids) for (const auto &item:m_items) if (item.id==id) { snapshot.append(item); if (item.status==WishStatus::Waiting) ++waiting; break; }
+    if (snapshot.isEmpty()) return;
+    const auto removing=snapshot.size()-waiting;
+    const QString action=waiting==0?QStringLiteral("删除记录"):removing==0?QStringLiteral("放弃商品"):QStringLiteral("删除／放弃商品");
+    const QString explanation=QStringLiteral("将放弃 %1 件待购商品，删除 %2 条历史记录。\n放弃会保留决策记录；删除仅移除清单条目，已记账消费仍保留。此操作无法撤销。").arg(waiting).arg(removing);
     auto *confirmation = new QMessageBox(QMessageBox::Question, action,
-        QStringLiteral("确定删除“%1”吗？\n%2").arg(item->name, explanation),
+        QStringLiteral("确定删除／放弃选中的 %1 件商品吗？\n%2").arg(snapshot.size()).arg(explanation),
         QMessageBox::Yes | QMessageBox::No, this);
     confirmation->setObjectName(QStringLiteral("wishConfirmationDialog"));
     confirmation->setTextFormat(Qt::PlainText);
@@ -447,13 +488,15 @@ void WishlistWidget::confirmWish(qint64 wishId)
     confirmation->button(QMessageBox::No)->setText(QStringLiteral("取消"));
     confirmation->setDefaultButton(QMessageBox::No);
     confirmation->setEscapeButton(QMessageBox::No);
-    connect(confirmation, &QMessageBox::finished, this, [this, confirmation, id, removing](int) {
+    connect(confirmation, &QMessageBox::finished, this, [this, confirmation, snapshot](int) {
         if (confirmation->standardButton(confirmation->clickedButton()) != QMessageBox::Yes)
             return;
-        if (!(removing ? m_repository.remove(id) : m_repository.abandon(id))) {
+        if (!m_repository.removeMany(snapshot)) {
             showError(m_repository.lastError());
             return;
         }
+        // A single abandonment keeps its details open when history remains visible.
+        if (snapshot.size()>1 || snapshot.first().status!=WishStatus::Waiting) m_table->clearSelection();
         if (!refresh())
             showError(QStringLiteral("操作已完成，但刷新失败：%1。请点击刷新。").arg(m_repository.lastError()));
         emit pricesChanged();

@@ -9,6 +9,7 @@
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QVariant>
+#include <QSet>
 
 namespace {
 QString queryError(const QSqlError &error)
@@ -166,6 +167,34 @@ bool WishlistRepository::remove(qint64 id)
     if (!catalog.closeWish(id,true)) { m_lastError=catalog.lastError(); connection.rollback(); return false; }
     if (!connection.commit()) { m_lastError = queryError(connection.lastError()); connection.rollback(); return false; }
     return true;
+}
+
+bool WishlistRepository::removeMany(const QList<WishItem> &snapshot, const QDateTime &now)
+{
+    m_lastError.clear();
+    if (snapshot.isEmpty() || !validNow(now)) { m_lastError=QStringLiteral("请选择有效的商品。"); return false; }
+    if (!connectionReady()) return false;
+    WorkflowStorage::Transaction write(m_database.database(),m_lastError); if (!write.ok()) return false;
+    QSet<qint64> seen;
+    QSqlQuery query(m_database.database());
+    UnifiedWishlistRepository catalog(m_database);
+    for (const auto &item:snapshot) {
+        if (item.id<=0 || seen.contains(item.id)) { m_lastError=QStringLiteral("商品编号无效或重复。"); return false; }
+        seen.insert(item.id);
+        const bool removing=item.status!=WishStatus::Waiting;
+        query.prepare(removing?QStringLiteral("DELETE FROM wishlist WHERE id=:id AND status=:status")
+            :QStringLiteral("UPDATE wishlist SET status=2,closed_ms=:now WHERE id=:id AND status=:status AND created_ms<=:now"));
+        query.bindValue(":id",item.id); query.bindValue(":status",int(item.status));
+        if (!removing) query.bindValue(":now",now.toMSecsSinceEpoch());
+        if (!query.exec()) { m_lastError=queryError(query.lastError()); return false; }
+        if (query.numRowsAffected()!=1) { m_lastError=QStringLiteral("清单状态已变化，本次操作未保存。请刷新后重新选择。"); return false; }
+        query.finish();
+        query.prepare("UPDATE wish_pools SET closed_ms=MAX(:now,created_ms) WHERE wish_id=:id AND closed_ms IS NULL");
+        query.bindValue(":id",item.id); query.bindValue(":now",now.toMSecsSinceEpoch());
+        if (!query.exec()) { m_lastError=queryError(query.lastError()); return false; } query.finish();
+        if (!catalog.closeWish(item.id,removing)) { m_lastError=catalog.lastError(); return false; }
+    }
+    return write.commit();
 }
 
 bool WishlistRepository::abandon(qint64 id, const QDateTime &now)

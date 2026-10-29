@@ -5,6 +5,8 @@
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QVariant>
+#include <QSet>
+#include <algorithm>
 
 namespace {
 QString writeError(const QSqlError &error)
@@ -113,8 +115,14 @@ bool TransactionRepository::update(const Transaction &transaction)
 
 bool TransactionRepository::remove(qint64 id)
 {
+    return removeMany({id});
+}
+
+bool TransactionRepository::removeMany(const QList<qint64> &ids)
+{
     m_lastError.clear();
-    if (id <= 0) {
+    if (ids.isEmpty() || QSet<qint64>(ids.begin(),ids.end()).size()!=ids.size()
+        || std::any_of(ids.begin(),ids.end(),[](qint64 id) { return id<=0; })) {
         m_lastError = QStringLiteral("请选择有效的消费记录。");
         return false;
     }
@@ -125,6 +133,7 @@ bool TransactionRepository::remove(qint64 id)
     }
     WorkflowStorage::Transaction removal(connection,m_lastError); if (!removal.ok()) return false;
     QSqlQuery query(connection);
+    for (const auto id:ids) {
     for (const auto &sql:{"DELETE FROM transaction_reviews WHERE transaction_id=:id","UPDATE bill_import_keys SET transaction_id=NULL WHERE transaction_id=:id"}) { query.prepare(sql); query.bindValue(":id",id); if (!query.exec()) { m_lastError=writeError(query.lastError()); return false; } query.finish(); }
     query.prepare("DELETE FROM review_tasks WHERE transaction_id=:id AND completed_ms IS NULL"); query.bindValue(":id",id);
     if (!query.exec()) { m_lastError=writeError(query.lastError()); return false; } query.finish();
@@ -141,7 +150,9 @@ bool TransactionRepository::remove(qint64 id)
         m_lastError = QStringLiteral("这条记录已不存在，请刷新列表后重试。");
         return false;
     }
-    query.finish(); return removal.commit();
+    query.finish();
+    }
+    return removal.commit();
 }
 
 bool TransactionRepository::findAll(QList<Transaction> &transactions)

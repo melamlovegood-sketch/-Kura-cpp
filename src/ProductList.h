@@ -241,7 +241,8 @@ public:
 
     void updateExpansion()
     {
-        const int selected = currentRow();
+        const auto selectedRows=selectionModel()->selectedRows();
+        const int selected = selectedRows.size()==1?selectedRows.first().row():-1;
         const bool open = selected >= 0 && item(selected, 0) && item(selected, 0)->isSelected();
         auto *body = open ? cellWidget(selected, 0) : nullptr;
         if (m_details && m_details->parentWidget() != body) {
