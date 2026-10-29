@@ -33,7 +33,7 @@
 
 | 范围 | 文档 |
 | --- | --- |
-| 账单与预算 | [账单工作台](BILLING_REFRESH.md)、[用途与预算](EXPENSE_CLASSIFICATION.md)、[导入与月度复盘](IMPORT_MONTHLY_REVIEW.md)、[金额输入](AMOUNT_INPUTS.md) |
+| 账单与预算 | [账单工作台](BILLING_REFRESH.md)、[分类管理](CATEGORIES.md)、[用途与预算](EXPENSE_CLASSIFICATION.md)、[导入与月度复盘](IMPORT_MONTHLY_REVIEW.md)、[金额输入](AMOUNT_INPUTS.md) |
 | 商品与清单 | [清单布局](PLANNING_REFRESH.md)、[商品资料](PRODUCT_DETAILS.md)、[分享卡片](PRODUCT_SHARE.md)、[价格截图](PRICE_SCREENSHOT.md)、[价格换算](PRICE_PERSPECTIVE.md) |
 | 购买前思考 | [购买决策](DECISION_FLOW.md)、[AI 追问](DECISION_CHAT.md)、[执行精简](EXECUTION_SIMPLIFIED.md)、[购买入口精简](PURCHASE_FLOW_SIMPLIFIED.md) |
 | 复盘与成就 | [复盘页面](REVIEW_REFRESH.md)、[消费人格](CONSUMER_PERSONALITIES.md)、[栗子成就](ACHIEVEMENTS.md) |

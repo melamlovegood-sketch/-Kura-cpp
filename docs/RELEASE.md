@@ -1,6 +1,6 @@
 # Windows 构建与发布
 
-最近已验收基线为 **0.16.6**；开发版本取自 `CMakeLists.txt`，不能仅凭版本号认定已发布。发布统一使用 `scripts/Build-Unified.ps1`，通过编译、完整回归及源码指纹核对后，才更新 `build/current.json`。安装包流程见 [INSTALLER.md](INSTALLER.md)。
+最近已验收基线为 **0.17.0**；开发版本取自 `CMakeLists.txt`，不能仅凭版本号认定已发布。发布统一使用 `scripts/Build-Unified.ps1`，通过编译、完整回归及源码指纹核对后，才更新 `build/current.json`。安装包流程见 [INSTALLER.md](INSTALLER.md)。
 
 ## 使用已有验收包
 
